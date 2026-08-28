@@ -5,7 +5,7 @@
     "key_env": "CHUTES_API_KEY",
     "key": "",
     "bid": 1.0,
-    "min_score": 0.4,
+    "min_score": 0.2,
     "warmup_successes": 2,
     "model": "zai-org/GLM-5.2-TEE"
   },
@@ -15,7 +15,7 @@
     "key_env": "OPENROUTER_API_KEY",
     "key": "",
     "bid": 0.9,
-    "min_score": 0.4,
+    "min_score": 0.2,
     "warmup_successes": 2,
     "model": "deepseek/deepseek-chat-v3-0324"
   }
