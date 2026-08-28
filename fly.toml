@@ -1,13 +1,18 @@
 # guac gateway — Fly.io config
-app = "guac"
+app = "addguac"
+primary_region = "sjc"
 
 [build]
   dockerfile = "Dockerfile"
 
 # Run on the smallest cheap VM. Per-second billing; idle ≈ $0.
-[primary]
-  region = "iad"
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
 
+# Durable state volume (ledger, accounts, offers, supplier quality).
 [mounts]
   source = "guac_data"
   destination = "/data"
@@ -21,8 +26,7 @@ app = "guac"
   ADGATE_ADS_PER_DAY = "1"
   ADGATE_DISCOUNT_RATE = "0.20"
   # Public host for sign-up so the returned base_url is correct (no 127.0.0.1).
-  # Change to your app's URL: https://<app>.fly.dev
-  ADGATE_PUBLIC_HOST = "https://guac.fly.dev"
+  ADGATE_PUBLIC_HOST = "https://guac-ivory-lagoon-3366.fly.dev"
 
 [http_service]
   internal_port = 8080
