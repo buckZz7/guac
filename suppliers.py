@@ -17,6 +17,14 @@ import time
 
 import config
 
+# A supplier classified proven_bad (enough failures, score below gate) is NOT
+# dropped forever. After this cooldown since its last attempt, it becomes
+# retry-eligible: the router probes it once more. If it succeeds it re-earns
+# health; if it fails the cooldown resets. This prevents a transient failure
+# (e.g. a dead model slug, a temporary outage) from permanently removing a
+# supplier.
+RECOVERY_COOLDOWN_S = 300.0
+
 
 class Supplier:
     def __init__(self, name, base_url, key="", bid=1.0, min_score=0.0,
@@ -34,6 +42,7 @@ class Supplier:
         self.successes = 0
         self.failures = 0
         self.total_latency_ms = 0.0
+        self.last_attempt_ts = 0.0
 
     # -- quality metrics ------------------------------------------------
     @property
@@ -62,12 +71,21 @@ class Supplier:
         """Has enough attempts AND a score below the gate — exclude from routing."""
         return self.attempts >= self.warmup_successes and self.score() < self.min_score
 
+    def retry_eligible(self):
+        """A proven_bad supplier may be probed again after the cooldown elapses,
+        so a transient failure doesn't remove it permanently."""
+        if not self.proven_bad():
+            return False
+        return (time.time() - self.last_attempt_ts) >= RECOVERY_COOLDOWN_S
+
     def healthy(self):
-        """Routable: not proven-bad. Unproven suppliers are tried optimistically
-        so they can earn a score; only proven-bad ones are dropped."""
-        return not self.proven_bad()
+        """Routable: not proven-bad, OR retry-eligible after cooldown.
+        Unproven suppliers are tried optimistically so they can earn a score;
+        proven-bad ones are retried only after the recovery cooldown."""
+        return (not self.proven_bad()) or self.retry_eligible()
 
     def record(self, ok, latency_ms):
+        self.last_attempt_ts = time.time()
         if ok:
             self.successes += 1
             self.total_latency_ms += latency_ms
@@ -86,6 +104,7 @@ class Supplier:
             "successes": self.successes,
             "failures": self.failures,
             "total_latency_ms": self.total_latency_ms,
+            "last_attempt_ts": self.last_attempt_ts,
         }
 
     @classmethod
@@ -97,6 +116,7 @@ class Supplier:
         s.successes = d.get("successes", 0)
         s.failures = d.get("failures", 0)
         s.total_latency_ms = d.get("total_latency_ms", 0.0)
+        s.last_attempt_ts = d.get("last_attempt_ts", 0.0)
         return s
 
 
@@ -119,6 +139,7 @@ class SupplierPool:
                     sup.successes = prev.get("successes", 0)
                     sup.failures = prev.get("failures", 0)
                     sup.total_latency_ms = prev.get("total_latency_ms", 0.0)
+                    sup.last_attempt_ts = prev.get("last_attempt_ts", 0.0)
         except Exception:
             pass
 
