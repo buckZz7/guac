@@ -58,6 +58,7 @@ def main():
     env["ADGATE_PUBLIC_HOST"] = "http://portal.local"
     env["ADGATE_MAGIC_SECRET"] = "test-secret"
     env["ADGATE_MAGIC_USED_FILE"] = os.path.join(td, "magic_used.json")
+    env["ADGATE_ATTRIBUTION_FILE"] = os.path.join(td, "attribution.jsonl")
 
     stub = start([PY, "stub.py", "--port", "8004"])
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8003"], cwd=ROOT,
@@ -114,12 +115,26 @@ def main():
         assert r.json().get("guac", {}).get("sponsored")
         print("sponsored completion served:", "✓")
 
-        # 6) stats show 1 impression, spent 0.01
+        # 6) stats show 1 impression, spent 0.01, and a click funnel
         st = httpx.get(GW + "/advertiser/stats",
                        headers={"authorization": f"Bearer {adv_token}"}).json()
         o = next(x for x in st["offers"] if x["id"] == oid)
         assert o["impressions"] == 1 and abs(o["spent"] - 0.01) < 1e-6, o
+        assert o.get("funnel", {}).get("clicked", 0) == 0, o  # funnel present
         print("per-impression billed (1 imp, $0.01):", "✓")
+        print("advertiser stats include click funnel:", "✓")
+
+        # 6b) attribution records a click -> advertiser funnel reflects it
+        cc = httpx.post(GW + "/v1/guac/attribution",
+                        headers={"authorization": f"Bearer {KEY}",
+                                 "x-user-id": "carol"},
+                        json={"offer_id": oid, "action": "clicked"})
+        assert cc.status_code == 200, cc.text
+        st = httpx.get(GW + "/advertiser/stats",
+                       headers={"authorization": f"Bearer {adv_token}"}).json()
+        o = next(x for x in st["offers"] if x["id"] == oid)
+        assert o["funnel"]["clicked"] == 1, o["funnel"]
+        print("click reflected in advertiser funnel:", "✓")
 
         # 7) auto-pause when budget spent (serve 2 more -> 3 total = budget)
         c = httpx.Client(base_url=GW, headers={"authorization": f"Bearer {KEY}"})

@@ -286,7 +286,28 @@ def offers_for_advertiser(email):
     return [o for o in _offers() if o.get("advertiser") == email]
 
 
+def _attribution_funnel():
+    """offer_id -> {"viewed","clicked","redeemed"} from the attribution log."""
+    funnel = {}
+    if config.ATTRIBUTION_FILE.exists():
+        try:
+            for line in config.ATTRIBUTION_FILE.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                a = json.loads(line)
+                oid = a.get("offer_id")
+                act = a.get("action")
+                if oid and act in ("viewed", "clicked", "redeemed"):
+                    funnel.setdefault(oid, {"viewed": 0, "clicked": 0, "redeemed": 0})
+                    funnel[oid][act] += 1
+        except Exception:
+            pass
+    return funnel
+
+
 def offer_stats_for(email):
+    funnel = _attribution_funnel()
     return [{
         "id": o["id"],
         "advertiser": o.get("advertiser"),
@@ -297,6 +318,7 @@ def offer_stats_for(email):
         "impressions": o["impressions"],
         "active": o["active"],
         "paused": o["paused"],
+        "funnel": funnel.get(o["id"], {"viewed": 0, "clicked": 0, "redeemed": 0}),
     } for o in offers_for_advertiser(email)]
 
 

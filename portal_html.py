@@ -166,7 +166,10 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None):
     created_flash = f'<div class="flash">Offer created: <strong>{_html.escape(created)}</strong></div>' if created else ""
     rows = "".join(
         f"<tr><td>{_html.escape(o['headline'])}</td>"
-        f"<td>{o['impressions']}</td><td>${o['spent']:.2f}</td>"
+        f"<td>{o['impressions']}</td>"
+        f"<td>{o['funnel']['clicked']}</td>"
+        f"<td>{o['funnel']['redeemed']}</td>"
+        f"<td>${o['spent']:.2f}</td>"
         f"<td>${o['budget']:.2f}</td>"
         f"<td>{'<span class=badge active>active</span>' if o['active'] else '<span class=badge paused>paused</span>'}</td>"
         f"<td>{_toggle(o['id'], o['paused'], advertiser['email'])}</td></tr>"
@@ -200,8 +203,8 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None):
     <div class="card">
       <h2>Your offers</h2>
       <table>
-        <tr><th>Offer</th><th>Impr.</th><th>Spent</th><th>Budget</th><th>Status</th><th></th></tr>
-        {rows if rows else '<tr><td colspan=6 class=meta>No offers yet. Create one above.</td></tr>'}
+        <tr><th>Offer</th><th>Impr.</th><th>Clicks</th><th>Redeemed</th><th>Spent</th><th>Budget</th><th>Status</th><th></th></tr>
+        {rows if rows else '<tr><td colspan=8 class=meta>No offers yet. Create one above.</td></tr>'}
       </table>
     </div>
     """
