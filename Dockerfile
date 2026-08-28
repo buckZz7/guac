@@ -19,7 +19,9 @@ ENV ADGATE_STATE_FILE=/data/state.json \
     ADGATE_USERS_FILE=/data/users.json \
     ADGATE_OFFERS_FILE=/data/offers.json \
     ADGATE_ADS_FILE=/app/ads.json \
-    ADGATE_SUPPLIERS_FILE=/app/suppliers.json
+    ADGATE_SUPPLIERS_FILE=/app/suppliers.json \
+    CHUTES_API_KEY= \
+    OPENROUTER_API_KEY=
 
 # Fly provides PORT; uvicorn binds it.
 EXPOSE 8080

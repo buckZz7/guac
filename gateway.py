@@ -140,11 +140,17 @@ async def chat_completions(request: Request):
         if supplier.key:
             sup_headers["authorization"] = f"Bearer {supplier.key}"
         upstream = f"{supplier.base_url}/chat/completions"
+        # Model routing: if the supplier pins a model and the client asked for
+        # a generic/guac model, substitute the supplier's real model slug.
+        sup_body = body
+        if supplier.model and body.get("model", "").lower() in ("guac", "default", ""):
+            sup_body = dict(body)
+            sup_body["model"] = supplier.model
         t0 = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 if stream:
-                    req = client.build_request("POST", upstream, headers=sup_headers, json=body)
+                    req = client.build_request("POST", upstream, headers=sup_headers, json=sup_body)
                     resp = await client.send(req, stream=True)
                     supplier.record(True, (time.monotonic() - t0) * 1000)
                     POOL.save_state()
@@ -155,7 +161,7 @@ async def chat_completions(request: Request):
 
                     return StreamingResponse(gen(), media_type="text/event-stream")
 
-                resp = await client.post(upstream, headers=sup_headers, json=body)
+                resp = await client.post(upstream, headers=sup_headers, json=sup_body)
                 data = resp.json()
             supplier.record(resp.status_code == 200, (time.monotonic() - t0) * 1000)
             POOL.save_state()

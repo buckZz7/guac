@@ -37,8 +37,23 @@ def main():
         if os.path.exists(p):
             os.remove(p)
 
+    # temp suppliers file -> local stub, so the test is hermetic
+    import tempfile
+    td = tempfile.mkdtemp()
+    sup = {"suppliers": [
+        {"name": "stub", "base_url": "http://127.0.0.1:8001/v1", "bid": 1.0,
+         "min_score": 0.4, "warmup_successes": 1},
+    ]}
+    sup_file = os.path.join(td, "suppliers.json")
+    with open(sup_file, "w") as f:
+        json.dump(sup, f)
+
     stub = start([PY, "stub.py", "--port", "8001"])
-    gw = start([PY, "gateway.py", "--port", "8000"])
+    env = dict(os.environ)
+    env["ADGATE_SUPPLIERS_FILE"] = sup_file
+    env["ADGATE_GATEWAY_KEY"] = KEY
+    gw = subprocess.Popen([PY, "gateway.py", "--port", "8000"], cwd=ROOT,
+                          env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         assert wait_ok("http://127.0.0.1:8001/health"), "stub didn't start"
         assert wait_ok(f"{GATEWAY}/health"), "gateway didn't start"

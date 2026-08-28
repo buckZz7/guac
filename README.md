@@ -53,7 +53,7 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 | `daily.py` | Emits the daily "brought to you by" sponsorship (companion delivery) |
 | `config.py` | Env-driven configuration |
 | `ads.json` | Sponsor offers |
-| `suppliers.json` | Inference sources (SN64/SN53/SN28 + retail fallback) |
+| `suppliers.json` | Inference sources (Chutes SN64 + OpenRouter; keys via env) |
 | `stub.py` | OpenAI-compatible stub upstream for tests |
 | `test_*.py` | Test suites |
 
@@ -139,6 +139,8 @@ hermes config set model.api_key dev-gateway-key
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `ADGATE_SUPPLIERS_FILE` | `suppliers.json` | inference source pool |
+| `CHUTES_API_KEY` | (empty) | key for Chutes SN64 supplier (starts `cpk_`) |
+| `OPENROUTER_API_KEY` | (empty) | key for OpenRouter supplier |
 | `ADGATE_ADS_FILE` | `ads.json` | sponsor offers |
 | `ADGATE_ADS_PER_DAY` | `1` | ads a user sees per day |
 | `ADGATE_DISCOUNT_RATE` | `0.20` | advertiser-funded % off |
@@ -162,4 +164,7 @@ hermes config set model.api_key dev-gateway-key
 - Supplier quality gate + failover (done)
 - Attribution callback (done)
 - Dashboard (done)
-- Point at real Bittensor suppliers (SN64/SN53/SN28) behind the quality gate
+- Portal: user sign-up + advertiser offers/stats (done)
+- Daily sponsorship delivery (done)
+- Real suppliers wired (Chutes SN64 + OpenRouter, keys via env) (done)
+- Point the quality gate at more Bittensor subnets (SN53/SN28) as they come online

@@ -12,6 +12,7 @@ Score (deterministic, no LLM judge):
 State is a simple JSON file so restarts don't forget measured quality.
 """
 import json
+import os
 import time
 
 import config
@@ -19,13 +20,16 @@ import config
 
 class Supplier:
     def __init__(self, name, base_url, key="", bid=1.0, min_score=0.0,
-                 warmup_successes=1):
+                 warmup_successes=1, model=None, key_env=None):
         self.name = name
         self.base_url = base_url.rstrip("/")
-        self.key = key
+        # key can be given directly, or loaded from an env var by name.
+        self.key = key or (os.environ.get(key_env, "") if key_env else "")
+        self.key_env = key_env
         self.bid = float(bid)            # base quality/priority weight
         self.min_score = float(min_score)
         self.warmup_successes = int(warmup_successes)
+        self.model = model               # default model slug for this supplier
         # runtime stats (also persisted via pool.save_state)
         self.successes = 0
         self.failures = 0
@@ -74,6 +78,8 @@ class Supplier:
         return {
             "name": self.name,
             "base_url": self.base_url,
+            "key_env": self.key_env,
+            "model": self.model,
             "bid": self.bid,
             "min_score": self.min_score,
             "warmup_successes": self.warmup_successes,
@@ -86,7 +92,8 @@ class Supplier:
     def from_dict(cls, d):
         s = cls(d["name"], d["base_url"], d.get("key", ""),
                 d.get("bid", 1.0), d.get("min_score", 0.0),
-                d.get("warmup_successes", 1))
+                d.get("warmup_successes", 1),
+                d.get("model"), d.get("key_env"))
         s.successes = d.get("successes", 0)
         s.failures = d.get("failures", 0)
         s.total_latency_ms = d.get("total_latency_ms", 0.0)

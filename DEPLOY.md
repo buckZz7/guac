@@ -30,10 +30,20 @@ to start. → https://fly.io
 6. **Deploy.** Hit **Deploy**. Fly builds the Dockerfile and gives you a public
    HTTPS URL in ~2 minutes.
 
-7. **Verify:**
+7. **Wire real inference suppliers.** The repo's `suppliers.json` points at real
+   OpenAI-compatible endpoints (Chutes SN64 + OpenRouter), but their API keys come
+   from env. In the app's **Secrets** tab add at least one:
+   - `CHUTES_API_KEY` = a key from https://chutes.ai (cheap, SN64) — key starts `cpk_`
+   - `OPENROUTER_API_KEY` = a key from https://openrouter.ai (fallback / many models)
+   With no key set, the gateway has no healthy supplier and returns 503 for
+   real requests. With one set, requests return real model answers.
+
+8. **Verify:**
    - `https://guac.fly.dev/health` → `{"status":"ok"}`
    - `https://guac.fly.dev/dashboard` → the stats dashboard
    - `https://guac.fly.dev/v1/models` → OpenAI-compatible model list
+   - `curl -X POST https://guac.fly.dev/v1/chat/completions -H "Authorization: Bearer <gateway-key>" -H "Content-Type: application/json" -d '{"model":"default","messages":[{"role":"user","content":"Say hi"}]}'`
+     → a real model reply (proves suppliers are live)
 
 ## Using it
 
@@ -63,10 +73,13 @@ emit the "brought to you by" message for a user, and deliver it to their Telegra
 
 ## Notes / gotchas
 
-- **Real inference suppliers are not wired in this repo.** `suppliers.json` has
-  placeholder entries pointing at stub URLs. To actually serve real model
-  requests, replace them with real OpenAI-compatible endpoints + keys before
-  expecting live answers.
+- **Supplier keys are secrets, never committed.** `suppliers.json` names the
+  endpoints and the env var for each key (`key_env`), but the keys themselves are
+  loaded from environment / Fly secrets at runtime. Set `CHUTES_API_KEY` and/or
+  `OPENROUTER_API_KEY` before expecting real answers.
+- **Model routing:** when a client sends `model: "default"` (or `guac`/blank),
+  guac substitutes the supplier's pinned model (see `suppliers.json`). A concrete
+  model slug passes through unchanged.
 - **State persists** on a Fly volume mounted at `/data` (see `fly.toml`). Ledger,
   user accounts, offers, and supplier quality survive restarts.
 - **Idle cost ≈ $0** — the VM auto-stops when unused and starts on demand
