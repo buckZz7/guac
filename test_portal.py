@@ -43,7 +43,17 @@ def main():
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_USERS_FILE"] = os.path.join(td, "users.json")
     env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
+    env["ADGATE_ADVERTISERS_FILE"] = os.path.join(td, "advertisers.json")
+    env["ADGATE_LEDGER_FILE"] = os.path.join(td, "ledger.jsonl")
+    env["ADGATE_ATTRIBUTION_FILE"] = os.path.join(td, "attribution.jsonl")
+    env["ADGATE_STATE_FILE"] = os.path.join(td, "state.json")
     env["ADGATE_GATEWAY_KEY"] = "master-key"
+    env["ADGATE_PUBLIC_HOST"] = GW
+    env["ADGATE_MAGIC_SECRET"] = "test-secret"
+    # Make the test process itself use the same temp paths as the gateway.
+    os.environ["ADGATE_USERS_FILE"] = env["ADGATE_USERS_FILE"]
+    os.environ["ADGATE_OFFERS_FILE"] = env["ADGATE_OFFERS_FILE"]
+    os.environ["ADGATE_ADVERTISERS_FILE"] = env["ADGATE_ADVERTISERS_FILE"]
     gw = subprocess.Popen([PY, "gateway.py", "--port", "9100"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -82,28 +92,52 @@ def main():
         assert bad.status_code == 401, bad.status_code
         print("bad key rejected: ✓")
 
-        # 5) advertiser submits an offer (via master key)
+        # 5) advertiser submits an offer (via their own token)
+        #    get a token through the magic-link flow
+        login = c.post("/portal/advertiser/login", data={"email": "acme@example.com"})
+        assert login.status_code == 200
+        import re
+        m = re.search(r'href="([^"]*portal/advertiser/auth[^"]*)"', login.text)
+        assert m, "no magic link"
+        link = m.group(1)
+        # The link host is PUBLIC_HOST (= the gateway). Use it as-is.
+        dash = c.get(link)
+        assert dash.status_code == 200 and "Ad manager" in dash.text
+        adv_token = re.search(r"adv_[a-f0-9]+", dash.text).group(0)
+        print("advertiser token via magic link:", adv_token[:8] + "...")
+
         off = c.post("/advertiser/offer", json={
-            "advertiser": "Acme", "headline": "50% off", "body": "details",
-            "claim": "code", "budget": 100.0},
-            headers={"authorization": "Bearer master-key"})
+            "headline": "50% off", "body": "details", "claim": "code",
+            "budget": 100.0, "offer_type": "discount"},
+            headers={"authorization": f"Bearer {adv_token}"})
         assert off.status_code == 200, off.text
         oid = off.json()["offer_id"]
         print("advertiser offer created:", oid)
 
         # 6) offer requires auth
-        noauth = c.post("/advertiser/offer", json={"advertiser": "X",
-                        "headline": "Y", "budget": 1})
+        noauth = c.post("/advertiser/offer", json={"headline": "Y", "budget": 1})
         assert noauth.status_code == 401, noauth.status_code
         print("offer requires auth: ✓")
 
-        # 7) advertiser stats
-        st = c.get("/advertiser/stats", headers={"authorization": "Bearer master-key"})
+        # 7) advertiser stats (scoped to their own offers)
+        st = c.get("/advertiser/stats", headers={"authorization": f"Bearer {adv_token}"})
         assert st.status_code == 200
         offers = st.json()["offers"]
         assert len(offers) == 1 and offers[0]["id"] == oid
-        assert offers[0]["advertiser"] == "Acme"
+        assert offers[0]["advertiser"] == "acme@example.com"
         print("advertiser stats:", "✓")
+
+        # 8) another advertiser sees no offers (isolation)
+        c.post("/portal/advertiser/login", data={"email": "other@example.com"})
+        login2 = c.post("/portal/advertiser/login", data={"email": "other@example.com"})
+        m2 = re.search(r'href="([^"]*portal/advertiser/auth[^"]*)"', login2.text)
+        link2 = m2.group(1)
+        dash2 = c.get(link2)
+        adv2_token = re.search(r"adv_[a-f0-9]+", dash2.text).group(0)
+        st2 = c.get("/advertiser/stats",
+                    headers={"authorization": f"Bearer {adv2_token}"}).json()
+        assert st2["offers"] == []
+        print("advertiser isolation:", "✓")
 
         print("\nPORTAL TESTS PASSED (signup + key auth + advertiser flow)")
     finally:

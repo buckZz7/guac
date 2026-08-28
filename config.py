@@ -33,6 +33,15 @@ LATENCY_HARD_MS = float(os.environ.get("ADGATE_LATENCY_HARD_MS", "15000"))
 # Advertiser-funded discount the user gets off their token cost. 0.20 = 20% off.
 DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.20"))
 
+# Per-impression advertiser billing: each delivered "brought to you by" costs
+# one impression; the advertiser's budget is the max impressions they fund.
+# An offer auto-pauses when its budget is spent.
+IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.01"))
+
+# Magic-link auth for the portal. Short-lived signed tokens, no passwords.
+MAGIC_SECRET = os.environ.get("ADGATE_MAGIC_SECRET", "dev-magic-secret")
+MAGIC_TTL_S = int(os.environ.get("ADGATE_MAGIC_TTL_S", "900"))
+
 # Ledger of metered usage (tokens + settlement). Plain JSON lines.
 LEDGER_FILE = Path(os.environ.get("ADGATE_LEDGER_FILE", str(BASE / "ledger.jsonl")))
 
@@ -49,6 +58,8 @@ PUBLIC_HOST = os.environ.get("ADGATE_PUBLIC_HOST", "")
 # Portal storage — users (API keys) and advertiser offers/budgets.
 USERS_FILE = Path(os.environ.get("ADGATE_USERS_FILE", str(BASE / "users.json")))
 OFFERS_FILE = Path(os.environ.get("ADGATE_OFFERS_FILE", str(BASE / "offers.json")))
+ADVERTISERS_FILE = Path(os.environ.get("ADGATE_ADVERTISERS_FILE",
+                                        str(BASE / "advertisers.json")))
 
 # How to identify a user. Default header the agent/gateway should send.
 USER_ID_HEADER = "x-user-id"

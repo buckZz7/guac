@@ -22,6 +22,7 @@ import httpx
 import config
 from suppliers import load_pool
 import portal
+import portal_html
 
 app = FastAPI(title="guac")
 
@@ -41,13 +42,26 @@ def _user_id(request: Request) -> str:
 
 
 def _pick_offer(used_ids):
-    """Pick an offer the user hasn't seen today. Deterministic, not an LLM."""
-    ads = [a for a in config.load_ads() if a["id"] not in used_ids]
+    """Pick an active offer the user hasn't seen today. Deterministic, not an LLM.
+
+    Sources from the portal's offer store (which carries budget/impression
+    state), falling back to the static ads.json if no portal offers exist.
+    """
+    # Portal offers: active, not paused, budget remaining.
+    portal_offers = [o for o in portal._offers()
+                     if o["active"] and not o["paused"]
+                     and o.get("spent", 0) < o.get("budget", 0)]
+    ads = [a for a in portal_offers if a["id"] not in used_ids]
     if not ads:
-        ads = config.load_ads()  # all seen today; cycle from the top
+        ads = portal_offers  # all seen today; cycle from the top
+    if not ads:
+        # Fallback: static ads.json (no portal offers configured).
+        static = [a for a in config.load_ads() if a["id"] not in used_ids]
+        if not static:
+            static = config.load_ads()
+        ads = static
     if not ads:
         return None
-    # Simple rotation: sponsor-001 then 002 ... deterministic.
     ads.sort(key=lambda a: a["id"])
     return ads[0]
 
@@ -57,14 +71,15 @@ def _human_payload(ad):
 
     This rides on the response for the human to see — it is never fed into the
     model, so it costs no tokens and never influences inference."""
+    sponsor = ad.get("advertiser") or ad.get("sponsor") or "Sponsor"
     return {
         "type": "sponsored",
-        "sponsor": ad["sponsor"],
-        "headline": ad["headline"],
+        "sponsor": sponsor,
+        "headline": ad.get("headline", ""),
         "body": ad.get("body", ""),
         "claim": ad.get("claim", ""),
         "offer_id": ad["id"],
-        "message": f"Brought to you by {ad['sponsor']} — {ad['headline']}.",
+        "message": f"Brought to you by {sponsor} — {ad.get('headline', '')}.",
         "disclosed": True,
     }
 
@@ -76,11 +91,10 @@ def _should_show_ad(user_id):
     shown = day.get("date") == today and day.get("count", 0)
     if shown >= config.ADS_PER_DAY:
         return False, state, None
-    ads = config.load_ads()
-    if not ads:
-        return False, state, None
     used = day.get("used", [])
     offer = _pick_offer(used)
+    if not offer:
+        return False, state, None
     day["count"] = shown + 1
     day["used"] = used + [offer["id"]]
     day["date"] = today
@@ -196,11 +210,18 @@ async def chat_completions(request: Request):
     usage = data.get("usage", {})
     prompt_tk = usage.get("prompt_tokens", 0)
     completion_tk = usage.get("completion_tokens", 0)
+    sponsor = None
+    if show_ad and offer:
+        sponsor = offer.get("advertiser") or offer.get("sponsor")
+        # Per-impression billing: record one delivered impression against the
+        # offer. Auto-pauses the offer when its budget is spent.
+        if "advertiser" in offer:
+            portal.charge_impression(offer["id"])
     config.log_ledger({
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "user": user_id,
         "sponsored": show_ad,
-        "sponsor": offer["sponsor"] if show_ad and offer else None,
+        "sponsor": sponsor,
         "supplier": chosen.name,
         "prompt_tokens": prompt_tk,
         "completion_tokens": completion_tk,
@@ -273,36 +294,48 @@ async def signup(request: Request):
 
 @app.post("/advertiser/offer")
 async def create_advertiser_offer(request: Request):
-    """Advertiser submits an offer. Returns its id + stats access."""
-    auth = request.headers.get("authorization", "")
-    api_key = auth[7:] if auth.startswith("Bearer ") else ""
-    if not (api_key and portal.verify_gateway_key(api_key)):
+    """Advertiser submits an offer. Uses the advertiser's own token (or master
+    key). Returns its id + stats access."""
+    advertiser_email = _auth_advertiser(request)
+    if not advertiser_email:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     body = await request.json()
-    advertiser = (body.get("advertiser") or "").strip()
     headline = (body.get("headline") or "").strip()
     body_txt = (body.get("body") or "").strip()
     claim = (body.get("claim") or "").strip()
     budget = body.get("budget")
-    if not (advertiser and headline and budget):
-        return JSONResponse({"error": {"message": "advertiser, headline, budget required"}},
+    offer_type = (body.get("offer_type") or "discount").strip()
+    if not (headline and budget):
+        return JSONResponse({"error": {"message": "headline, budget required"}},
                             status_code=400)
     try:
         budget = float(budget)
     except (TypeError, ValueError):
         return JSONResponse({"error": {"message": "budget must be a number"}}, status_code=400)
-    offer = portal.create_offer(advertiser, headline, body_txt, claim, budget)
+    offer = portal.create_offer(advertiser_email, headline, body_txt, claim, budget, offer_type)
     return {"offer_id": offer["id"], "budget": offer["budget"], "status": "created"}
 
 
 @app.get("/advertiser/stats")
 async def advertiser_stats(request: Request):
-    """Advertiser sees impressions + funnel for their offers."""
+    """Advertiser sees impressions + funnel for their own offers."""
+    advertiser_email = _auth_advertiser(request)
+    if not advertiser_email:
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    return {"offers": portal.offer_stats_for(advertiser_email)}
+
+
+def _auth_advertiser(request):
+    """Return the authenticated advertiser's email (advertiser token or master
+    key), else None. A user API key is not an advertiser credential."""
     auth = request.headers.get("authorization", "")
     api_key = auth[7:] if auth.startswith("Bearer ") else ""
-    if not (api_key and portal.verify_gateway_key(api_key)):
-        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
-    return {"offers": portal.offer_stats()}
+    if not api_key:
+        return None
+    if api_key == config.GATEWAY_KEY:
+        return "master"
+    adv = portal.get_advertiser_by_token(api_key)
+    return adv.get("email") if adv else None
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -436,6 +469,127 @@ _DASHBOARD_HTML = """<!doctype html>
 
 
 
+# ---------------------------------------------------------------------------
+# Portal (HTML UI, magic-link auth)
+# ---------------------------------------------------------------------------
+
+def _magic_link_for(role, email):
+    token = portal.make_magic_token(role, email)
+    host = config.PUBLIC_HOST or "http://127.0.0.1:8000"
+    return f"{host.rstrip('/')}/portal/{role}/auth?token={token}"
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_landing():
+    return portal_html.landing()
+
+
+@app.post("/portal/user/login", response_class=HTMLResponse)
+async def portal_user_login(request: Request):
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return portal_html.user_login_form(email, error="Valid email required")
+    # Ensure the user exists so they can always sign back in.
+    if not portal.get_user_by_email(email):
+        portal.create_user(email, 1)
+    link = _magic_link_for("user", email)
+    return portal_html.user_login_form(email, magic_link=link)
+
+
+@app.get("/portal/user/auth", response_class=HTMLResponse)
+async def portal_user_auth(request: Request):
+    token = request.query_params.get("token", "")
+    verified = portal.verify_magic_token(token)
+    if not verified or verified[0] != "user":
+        return portal_html.user_login_form(error="Link invalid or expired")
+    email = verified[1]
+    user = portal.get_user_by_email(email)
+    if not user:
+        return portal_html.user_login_form(error="No such user")
+    # Savings: cheap-supply + ad money from the ledger for this user.
+    savings = 0.0
+    for r in _read_ledger(config.LEDGER_FILE):
+        if r.get("user") == email and r.get("sponsored"):
+            savings += config.DISCOUNT_RATE  # est. discount value per sponsored req
+    return portal_html.user_dashboard(user, savings)
+
+
+@app.post("/portal/user/settings", response_class=HTMLResponse)
+async def portal_user_settings(request: Request):
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    ads = int(form.get("ads_per_day") or 1)
+    user = portal.get_user_by_email(email)
+    if not user:
+        return portal_html.user_login_form(error="No such user")
+    portal.update_user(email, ads_per_day=min(10, max(1, ads)))
+    user = portal.get_user_by_email(email)
+    return portal_html.user_dashboard(user, 0.0)
+
+
+@app.post("/portal/advertiser/login", response_class=HTMLResponse)
+async def portal_advertiser_login(request: Request):
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return portal_html.advertiser_login_form(email, error="Valid email required")
+    if not portal.get_advertiser(email):
+        portal.create_advertiser(email)
+    link = _magic_link_for("advertiser", email)
+    return portal_html.advertiser_login_form(email, magic_link=link)
+
+
+@app.get("/portal/advertiser/auth", response_class=HTMLResponse)
+async def portal_advertiser_auth(request: Request):
+    token = request.query_params.get("token", "")
+    verified = portal.verify_magic_token(token)
+    if not verified or verified[0] != "advertiser":
+        return portal_html.advertiser_login_form(error="Link invalid or expired")
+    email = verified[1]
+    adv = portal.get_advertiser(email)
+    if not adv:
+        return portal_html.advertiser_login_form(error="No such advertiser")
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email))
+
+
+@app.post("/portal/advertiser/offer", response_class=HTMLResponse)
+async def portal_advertiser_offer(request: Request):
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    headline = (form.get("headline") or "").strip()
+    body_txt = (form.get("body") or "").strip()
+    claim = (form.get("claim") or "").strip()
+    offer_type = (form.get("offer_type") or "discount").strip()
+    adv = portal.get_advertiser(email)
+    if not adv:
+        return portal_html.advertiser_login_form(error="Not logged in")
+    budget_raw = form.get("budget")
+    try:
+        budget = float(budget_raw)
+    except (TypeError, ValueError):
+        return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                                error="Budget must be a number")
+    if not headline or budget <= 0:
+        return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                                error="Headline and positive budget required")
+    offer = portal.create_offer(email, headline, body_txt, claim, budget, offer_type)
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                            created=offer["headline"])
+
+
+@app.post("/portal/advertiser/offer/{offer_id}/toggle", response_class=HTMLResponse)
+async def portal_advertiser_toggle(request: Request, offer_id: str):
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    adv = portal.get_advertiser(email)
+    offer = portal.get_offer(offer_id)
+    if not adv or not offer or offer.get("advertiser") != email:
+        return portal_html.advertiser_login_form(error="Not authorized")
+    portal.set_offer_paused(offer_id, not offer.get("paused", False))
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
@@ -443,7 +597,6 @@ def main():
     args = ap.parse_args()
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port)
-
 
 if __name__ == "__main__":
     main()

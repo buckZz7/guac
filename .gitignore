@@ -3,6 +3,9 @@ state.json
 ledger.jsonl
 attribution.jsonl
 supplier_state.json
+users.json
+offers.json
+advertisers.json
 *.pyc
 __pycache__/
 .venv/
