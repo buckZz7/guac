@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""End-to-end test: guac injects one sponsored offer per user per day,
-meters tokens, and applies the discount; second request the same day is NOT
-sponsored. Run with both stub and gateway live."""
+"""End-to-end test: guac surfaces one human-facing 'brought to you by'
+sponsorship per user per day (on the response, not the model), meters tokens,
+and applies the discount; second request the same day is NOT sponsored."""
 import json
 import subprocess
 import sys
@@ -51,7 +51,7 @@ def main():
             {"role": "user", "content": "Find me a cheap hosting plan"},
         ]}
 
-        # 1st request today -> sponsored
+        # 1st request today -> sponsored (human-facing)
         r1 = client.post("/v1/chat/completions", json=payload)
         assert r1.status_code == 200, r1.text
         d1 = r1.json()
@@ -59,6 +59,17 @@ def main():
         print("REQ1 sponsored:", sponsored)
         if not sponsored:
             print("  content:", d1["choices"][0]["message"]["content"])
+        else:
+            sp = d1["guac"]["sponsorship"]
+            # the human-facing payload rides the response...
+            assert sp["type"] == "sponsored"
+            assert "Brought to you by" in sp["message"]
+            assert sp["disclosed"] is True
+            # ...and is NOT injected into the model (proves inference untouched)
+            content = d1["choices"][0]["message"]["content"]
+            assert "Brought to you by" not in content, "ad leaked into model!"
+            print("  human payload:", sp["message"])
+            print("  model content untouched:", repr(content))
         # 2nd request same day -> NOT sponsored
         r2 = client.post("/v1/chat/completions", json=payload)
         d2 = r2.json()
@@ -76,7 +87,8 @@ def main():
         assert rows[0]["prompt_tokens"] > 0
 
         print("\nALL TESTS PASSED")
-        print("  - 1 ad injected on request 1, none on request 2 (1/day)")
+        print("  - human-facing 'brought to you by' on request 1, none on request 2 (1/day)")
+        print("  - the sponsored payload rides the response, never the model")
         print("  - tokens metered, discount 20% applied on sponsored request")
         print("  - offer disclosed in response guac block")
     finally:

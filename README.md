@@ -1,9 +1,11 @@
 # guac
 
 OpenAI-compatible gateway that sits between an agent and its inference provider.
-It injects one sponsored offer per day into the agent's request, meters the exact
-tokens, routes through a quality-gated pool of cheap suppliers (with failover),
-and applies a transparent, advertiser-funded discount to the user's per-token cost.
+V1 is human-facing sponsorship: when a sponsored offer is due, guac attaches a
+disclosed **"brought to you by"** payload to the response — for the human to see,
+never fed into the model. It routes through a quality-gated pool of cheap
+suppliers (with failover), meters the exact tokens, and applies a transparent,
+advertiser-funded discount to the user's per-token cost.
 
 The user's discount is a lower price, not a credit. No wallets, no balances.
 
@@ -11,7 +13,16 @@ The user's discount is a lower price, not a credit. No wallets, no balances.
 [agent] --base_url=guac--> [gateway] --quality-gated pool--> [suppliers]
    (Hermes/OpenClaw/Codex)     /|\                           (SN64/SN53/SN28/retail)
         user pays discounted rate <---|  advertiser money lowers it
+   human sees "Brought to you by <sponsor>" on the response (never the model)
 ```
+
+## v1 design choice
+
+The v1 sponsorship is **human-facing**, not agent-native. The gateway never
+injects anything into the model's context (costs no tokens, never influences
+inference). The disclosed sponsorship rides on the response for the human.
+The later agent-native "hard buyer" version can be layered on without changing
+the economics.
 
 ## Model
 
@@ -35,7 +46,7 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 
 | File | Purpose |
 |------|---------|
-| `gateway.py` | OpenAI-compatible proxy: ad injection, metering, routing, dashboard, attribution |
+| `gateway.py` | OpenAI-compatible proxy: human-facing sponsorship, metering, routing, dashboard, attribution |
 | `suppliers.py` | Quality-gated supplier pool with deterministic scoring + failover |
 | `settlement.py` | Monthly statement from the ledger (Model B economics) |
 | `config.py` | Env-driven configuration |

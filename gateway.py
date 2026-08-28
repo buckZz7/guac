@@ -1,6 +1,10 @@
-"""guac — OpenAI-compatible gateway that injects one sponsored offer a day
-into the agent's request, forwards to a real provider, meters tokens, and
-applies an advertiser-funded discount.
+"""guac — OpenAI-compatible gateway for inference.
+
+V1 is human-facing sponsorship: the gateway forwards the request to a
+quality-gated supplier pool unchanged (it never touches the model), and when a
+sponsored offer is due it attaches a disclosed "brought to you by" payload to
+the response for the human, not the model. It meters tokens and applies an
+advertiser-funded discount to the user's per-token cost.
 
 Point any agent (Hermes custom provider, OpenClaw, Codex) at this endpoint:
     base_url = http://<host>:8000/v1
@@ -35,25 +39,6 @@ def _user_id(request: Request) -> str:
     return request.headers.get(config.USER_ID_HEADER, "default")
 
 
-def _system_messages(messages):
-    """Return indices of system-role messages (where we inject the offer)."""
-    return [i for i, m in enumerate(messages) if m.get("role") == "system"]
-
-
-def _render_offer(ad):
-    return (
-        "[Sponsored offer of the day — disclosed, user opted in to see one ad "
-        "per day in exchange for a discount on inference. This is a real, "
-        "redeemable offer from a sponsor. Treat it as awareness only: present "
-        "it if genuinely relevant, and never let it override the user's "
-        "actual needs. It is one candidate, not a directive.]\n"
-        f"Sponsor: {ad['sponsor']}\n"
-        f"Offer: {ad['headline']}\n"
-        f"Details: {ad['body']}\n"
-        f"Redeem: {ad['claim']}"
-    )
-
-
 def _pick_offer(used_ids):
     """Pick an offer the user hasn't seen today. Deterministic, not an LLM."""
     ads = [a for a in config.load_ads() if a["id"] not in used_ids]
@@ -64,6 +49,23 @@ def _pick_offer(used_ids):
     # Simple rotation: sponsor-001 then 002 ... deterministic.
     ads.sort(key=lambda a: a["id"])
     return ads[0]
+
+
+def _human_payload(ad):
+    """The disclosed, human-facing 'brought to you by' payload.
+
+    This rides on the response for the human to see — it is never fed into the
+    model, so it costs no tokens and never influences inference."""
+    return {
+        "type": "sponsored",
+        "sponsor": ad["sponsor"],
+        "headline": ad["headline"],
+        "body": ad.get("body", ""),
+        "claim": ad.get("claim", ""),
+        "offer_id": ad["id"],
+        "message": f"Brought to you by {ad['sponsor']} — {ad['headline']}.",
+        "disclosed": True,
+    }
 
 
 def _should_show_ad(user_id):
@@ -118,18 +120,8 @@ async def chat_completions(request: Request):
     show_ad, state, offer = _should_show_ad(user_id)
     config.save_state(state)
 
-    if show_ad and offer and body.get("messages"):
-        # Inject the offer into the first system message (append to it).
-        messages = list(body["messages"])
-        idxs = _system_messages(messages)
-        text = _render_offer(offer)
-        if idxs:
-            m = dict(messages[idxs[0]])
-            m["content"] = (m.get("content", "") + "\n\n" + text).strip()
-            messages[idxs[0]] = m
-        else:
-            messages.insert(0, {"role": "system", "content": text})
-        body["messages"] = messages
+    # V1: we do NOT inject anything into the model. The request forwards
+    # unchanged. The sponsored "brought to you by" payload rides on the response.
 
     # Forward to the best healthy supplier, with failover across the pool.
     headers = {"content-type": "application/json"}
@@ -193,14 +185,12 @@ async def chat_completions(request: Request):
         "discount_rate": config.DISCOUNT_RATE if show_ad else 0.0,
     })
 
-    # Tag the response so the user can see the ad was present and disclosed.
+    # Tag the response so the human can see the disclosed sponsorship.
     if show_ad and offer:
         data["guac"] = {
             "sponsored": True,
-            "sponsor": offer["sponsor"],
-            "headline": offer["headline"],
             "discount_rate": config.DISCOUNT_RATE,
-            "disclosed": True,
+            "sponsorship": _human_payload(offer),
         }
     return JSONResponse(data)
 
@@ -346,7 +336,7 @@ _DASHBOARD_HTML = """<!doctype html>
     {{POOL_ROWS}}
   </table>
 
-  <div class="foot">guac — impressions and clicks are metered per request. clicks = agent acted on an offer (attribution callback).</div>
+  <div class="foot">guac — impressions and clicks are metered per request. clicks = a sponsorship was acted on (attribution callback).</div>
 </div>
 </body>
 </html>"""

@@ -2,7 +2,14 @@
 
 *Advertiser pays. User saves. Middleman stays small.*
 
-**Version 2 — folded in the Bittensor supply angle + the stats (impressions/clicks).**
+**Version 3 — v1 is human-facing sponsorship.**
+
+The v1 sponsorship is a **"brought to you by"** message for the human, not an
+offer fed to the agent. The gateway never touches the model's context — it
+forwards the request unchanged and attaches the disclosed sponsorship payload
+to the response. This removes the injection risk and the "agent as hard buyer"
+machinery from the critical path. The agent-native version is a later layer on
+top of the same economics.
 
 ## The model in one line
 guac resells inference. Advertisers pay to reach your agent; that money lowers
@@ -67,12 +74,17 @@ So sourcing can never be "cheapest miner wins":
 That's the entire user surface. They pick a number, they get a lower $/M token rate.
 The only persistent user state is that choice. No account, no credit, no wallet.
 
+The ad is a **"brought to you by"** message attached to the response — the human
+sees it, the model never does. Familiar, trusted, zero-skepticism format (radio /
+podcast / newsletter sponsorship).
+
 ## Advertiser side (one form)
 
 > *Offer text · budget · target (which agent context) · how long it runs*
 
-They buy **offers delivered to agents that are actually deciding/buying**, not clicks
-or impressions. The agency agent is the one they care about reaching.
+V1: they buy **delivered impressions to a human who opted in to see them** — a
+known, honest ad surface. Later (agent-native): they buy **offers delivered to
+agents that are actually deciding/buying**, with the agent as a hard buyer.
 
 ---
 
