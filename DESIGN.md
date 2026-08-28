@@ -149,3 +149,7 @@ Supply is the lever that turns a thin-margin niche into a real business.
 4. **Attribution callback** — the "click" metric.
 5. **Dashboard** — impressions + clicks for both sides.
 6. **Portal** — magic-link auth for users + advertisers, ad manager, per-impression billing (done, live).
+
+**Next: agent-native tier** — offers delivered to agents that actually decide/buy
+(hard-buyer guardrails, act-based billing, typed offer tool). See
+[`docs/AGENT_TIER.md`](docs/AGENT_TIER.md) for the design spec.
