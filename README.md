@@ -46,20 +46,47 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 
 | File | Purpose |
 |------|---------|
-| `gateway.py` | OpenAI-compatible proxy: human-facing sponsorship, metering, routing, dashboard, attribution |
+| `gateway.py` | OpenAI-compatible proxy: sponsorship, metering, routing, dashboard, attribution, portal routes |
 | `suppliers.py` | Quality-gated supplier pool with deterministic scoring + failover |
 | `settlement.py` | Monthly statement from the ledger (Model B economics) |
+| `portal.py` | Self-serve sign-up (users) + advertiser offers/stats |
+| `daily.py` | Emits the daily "brought to you by" sponsorship (companion delivery) |
 | `config.py` | Env-driven configuration |
 | `ads.json` | Sponsor offers |
 | `suppliers.json` | Inference sources (SN64/SN53/SN28 + retail fallback) |
 | `stub.py` | OpenAI-compatible stub upstream for tests |
 | `test_*.py` | Test suites |
 
+## Portal (self-serve)
+
+**Users sign up** — get an API key + base_url:
+```
+POST /signup    {"email": "...", "ads_per_day": 1}
+                -> {"api_key": "guac_...", "base_url": "https://.../v1"}
+```
+
+**Advertisers submit offers** + see stats:
+```
+POST /advertiser/offer   {"advertiser","headline","budget",...}
+GET  /advertiser/stats
+```
+
+## Daily delivery
+
+`daily.py` emits the day's human-facing sponsorship:
+```
+.venv/bin/python daily.py
+# -> ✨ Brought to you by <sponsor> — <headline>. / Redeem: ...
+```
+Run it once a day (a cron job) and deliver the output — e.g. a no_agent Hermes
+cron to Telegram. Zero LLM tokens by design.
+
 ## Deploy (hosted service)
 
 guac is built to run as a hosted service. The Dockerfile + fly.toml deploy it to
 [Fly.io](https://fly.io) — a cheap, per-second-billed Linux VM that gives a
-public HTTPS URL. Idle cost ≈ $0.
+public HTTPS URL. Idle cost ≈ $0. **You can do the whole deploy in the browser
+— no local machine needed** (see [DEPLOY.md](DEPLOY.md) for the exact click-path).
 
 ```bash
 # one-time

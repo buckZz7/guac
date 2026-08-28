@@ -38,6 +38,13 @@ ATTRIBUTION_FILE = Path(os.environ.get("ADGATE_ATTRIBUTION_FILE",
 # Auth token for the gateway itself (the key the agent sends us).
 GATEWAY_KEY = os.environ.get("ADGATE_GATEWAY_KEY", "dev-gateway-key")
 
+# Public base URL for the hosted service (used in sign-up responses).
+PUBLIC_HOST = os.environ.get("ADGATE_PUBLIC_HOST", "")
+
+# Portal storage — users (API keys) and advertiser offers/budgets.
+USERS_FILE = Path(os.environ.get("ADGATE_USERS_FILE", str(BASE / "users.json")))
+OFFERS_FILE = Path(os.environ.get("ADGATE_OFFERS_FILE", str(BASE / "offers.json")))
+
 # How to identify a user. Default header the agent/gateway should send.
 USER_ID_HEADER = "x-user-id"
 

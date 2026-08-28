@@ -96,24 +96,31 @@ def main():
         assert st["primary"]["healthy"] is True, st
         print("primary healthy after recovery:", "✓")
 
-        # 4) attribution callback (the "click")
-        a = c.post("/v1/guac/attribution",
-                   json={"offer_id": "sponsor-001", "action": "redeemed"})
-        assert a.status_code == 200, a.text
+        # 4) attribution callback — full funnel (viewed/clicked/redeemed)
+        for act in ("viewed", "clicked", "redeemed"):
+            a = c.post("/v1/guac/attribution",
+                       json={"offer_id": "sponsor-001", "action": act})
+            assert a.status_code == 200, a.text
+        # invalid action rejected
+        bad = c.post("/v1/guac/attribution",
+                     json={"offer_id": "sponsor-001", "action": "bogus"})
+        assert bad.status_code == 400, bad.status_code
         attrib = _read(ROOT + "/attribution.jsonl")
-        assert len(attrib) == 1 and attrib[0]["offer_id"] == "sponsor-001"
+        assert len(attrib) == 3 and attrib[-1]["action"] == "redeemed"
 
-        # 5) dashboard renders with numbers
+        # 5) dashboard renders with numbers + funnel columns
         d = c.get("/dashboard")
         assert d.status_code == 200, d.status_code
         html = d.text
         assert "impressions" in html.lower()
         assert "primary" in html and "secondary" in html
+        assert "Redeemed" in html, "funnel column missing"
 
         print("REQ1 supplier:", "primary ✓")
         print("REQ2 (A failed) supplier:", "secondary ✓")
         print("REQ3 (A recovered) supplier:", "primary ✓")
-        print("attribution logged:", "✓")
+        print("attribution funnel (viewed/clicked/redeemed):", "✓")
+        print("invalid action rejected:", "✓")
         print("dashboard 200, renders supplier pool:", "✓")
         print("\nINTEGRATION TESTS PASSED (failover + attribution + dashboard)")
     finally:

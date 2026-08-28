@@ -21,6 +21,7 @@ import httpx
 
 import config
 from suppliers import load_pool
+import portal
 
 app = FastAPI(title="guac")
 
@@ -108,13 +109,17 @@ async def models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    # Auth: the agent sends our gateway key.
+    # Auth: the agent sends a guac API key (user key or master gateway key).
     auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {config.GATEWAY_KEY}":
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    user_id = portal.verify_gateway_key(api_key) if api_key else None
+    if not user_id:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    # use the header x-user-id if present, else the account identity
+    header_user = request.headers.get(config.USER_ID_HEADER)
+    user_id = header_user if header_user else user_id
 
     body = await request.json()
-    user_id = _user_id(request)
     stream = bool(body.get("stream", False))
 
     show_ad, state, offer = _should_show_ad(user_id)
@@ -197,25 +202,90 @@ async def chat_completions(request: Request):
 
 @app.post("/v1/guac/attribution")
 async def attribution(request: Request):
-    """Agent reports it actually acted on an offer — the honest 'click'.
+    """Record that a sponsorship was actually acted on — the honest 'click'.
 
-    Body: {"offer_id": "sponsor-001", "action": "redeemed|referenced|accepted"}
+    Human-facing v1: the client (agent UI, companion bot, or dashboard) reports
+    what the user did with a disclosed sponsorship. Action types:
+      viewed    — the sponsorship was surfaced to the user (an impression)
+      clicked   — the user opened/engaged the offer (real interest)
+      redeemed  — the user used the offer (a conversion, strongest signal)
+
+    Body: {"offer_id": "sponsor-001", "action": "viewed|clicked|redeemed",
+           "note": "optional"}
     """
     auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {config.GATEWAY_KEY}":
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    if not (api_key and portal.verify_gateway_key(api_key)):
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     body = await request.json()
     offer_id = body.get("offer_id")
     if not offer_id:
         return JSONResponse({"error": {"message": "offer_id required"}}, status_code=400)
+    action = body.get("action", "viewed")
+    if action not in ("viewed", "clicked", "redeemed"):
+        return JSONResponse({"error": {"message": "action must be viewed|clicked|redeemed"}},
+                            status_code=400)
     config.log_ledger_row(config.ATTRIBUTION_FILE, {
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "user": _user_id(request),
         "offer_id": offer_id,
-        "action": body.get("action", "accepted"),
+        "action": action,
         "note": body.get("note", ""),
     })
     return {"ok": True}
+
+
+@app.post("/signup")
+async def signup(request: Request):
+    """User self-serve sign-up. Returns api_key + base_url. That's it."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return JSONResponse({"error": {"message": "valid email required"}}, status_code=400)
+    ads_per_day = int(body.get("ads_per_day", 1))
+    user, err = portal.create_user(email, ads_per_day)
+    if err:
+        return JSONResponse({"error": {"message": err}}, status_code=409)
+    return {
+        "api_key": user["api_key"],
+        "base_url": portal.user_base_url(),
+        "ads_per_day": user["ads_per_day"],
+        "note": "point your agent at base_url with this api_key",
+    }
+
+
+@app.post("/advertiser/offer")
+async def create_advertiser_offer(request: Request):
+    """Advertiser submits an offer. Returns its id + stats access."""
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    if not (api_key and portal.verify_gateway_key(api_key)):
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    body = await request.json()
+    advertiser = (body.get("advertiser") or "").strip()
+    headline = (body.get("headline") or "").strip()
+    body_txt = (body.get("body") or "").strip()
+    claim = (body.get("claim") or "").strip()
+    budget = body.get("budget")
+    if not (advertiser and headline and budget):
+        return JSONResponse({"error": {"message": "advertiser, headline, budget required"}},
+                            status_code=400)
+    try:
+        budget = float(budget)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": {"message": "budget must be a number"}}, status_code=400)
+    offer = portal.create_offer(advertiser, headline, body_txt, claim, budget)
+    return {"offer_id": offer["id"], "budget": offer["budget"], "status": "created"}
+
+
+@app.get("/advertiser/stats")
+async def advertiser_stats(request: Request):
+    """Advertiser sees impressions + funnel for their offers."""
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    if not (api_key and portal.verify_gateway_key(api_key)):
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    return {"offers": portal.offer_stats()}
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -230,22 +300,27 @@ def dashboard():
     n_clicks = len(attrib)
     total_tk = sum(r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in rows)
 
-    # Per-sponsor impressions + clicks
+    # Per-sponsor impressions + full click funnel (viewed / clicked / redeemed)
     sponsor_imps = {}
     for r in sponsored:
         s = r.get("sponsor", "?")
         sponsor_imps.setdefault(s, 0)
         sponsor_imps[s] += 1
-    sponsor_clicks = {}
+    sponsor_funnel = {}   # offer_id -> {"viewed","clicked","redeemed"}
     for a in attrib:
         o = a.get("offer_id", "?")
-        sponsor_clicks.setdefault(o, 0)
-        sponsor_clicks[o] += 1
+        act = a.get("action", "viewed")
+        sponsor_funnel.setdefault(o, {"viewed": 0, "clicked": 0, "redeemed": 0})
+        if act in sponsor_funnel[o]:
+            sponsor_funnel[o][act] += 1
 
     imp_rows = "".join(
-        f"<tr><td>{k}</td><td>{v}</td><td>{sponsor_clicks.get(k, 0)}</td></tr>"
+        f"<tr><td>{k}</td><td>{v}</td>"
+        f"<td>{sponsor_funnel.get(k, {}).get('viewed', 0)}</td>"
+        f"<td>{sponsor_funnel.get(k, {}).get('clicked', 0)}</td>"
+        f"<td>{sponsor_funnel.get(k, {}).get('redeemed', 0)}</td></tr>"
         for k, v in sorted(sponsor_imps.items(), key=lambda x: -x[1])
-    ) or "<tr><td colspan=3>no impressions yet</td></tr>"
+    ) or "<tr><td colspan=5>no impressions yet</td></tr>"
 
     return HTMLResponse(_DASHBOARD_HTML
                         .replace("{{TOTAL_REQ}}", str(total_req))
@@ -326,7 +401,7 @@ _DASHBOARD_HTML = """<!doctype html>
 
   <h2>Offers</h2>
   <table>
-    <tr><th>Sponsor</th><th>Impressions</th><th>Clicks</th></tr>
+    <tr><th>Sponsor</th><th>Impressions</th><th>Viewed</th><th>Clicked</th><th>Redeemed</th></tr>
     {{IMP_ROWS}}
   </table>
 
