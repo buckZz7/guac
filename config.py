@@ -41,6 +41,9 @@ IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.01"))
 # Magic-link auth for the portal. Short-lived signed tokens, no passwords.
 MAGIC_SECRET = os.environ.get("ADGATE_MAGIC_SECRET", "dev-magic-secret")
 MAGIC_TTL_S = int(os.environ.get("ADGATE_MAGIC_TTL_S", "900"))
+# Track used magic-link nonces so a link is one-time-use (can't be replayed).
+MAGIC_USED_FILE = Path(os.environ.get("ADGATE_MAGIC_USED_FILE",
+                                       str(BASE / "magic_used.json")))
 
 # Ledger of metered usage (tokens + settlement). Plain JSON lines.
 LEDGER_FILE = Path(os.environ.get("ADGATE_LEDGER_FILE", str(BASE / "ledger.jsonl")))

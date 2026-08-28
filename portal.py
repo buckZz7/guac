@@ -146,7 +146,7 @@ def get_advertiser_by_token(token):
 
 
 # ---------------------------------------------------------------------------
-# Magic-link auth (signed, short-lived, no passwords)
+# Magic-link auth (signed, short-lived, one-time-use, no passwords)
 # ---------------------------------------------------------------------------
 
 def _sign(msg):
@@ -154,24 +154,41 @@ def _sign(msg):
                     hashlib.sha256).hexdigest()
 
 
+def _used_nonces():
+    return _read_json(config.MAGIC_USED_FILE, [])
+
+
+def _save_used_nonces(nonces):
+    _write_json(config.MAGIC_USED_FILE, nonces)
+
+
 def make_magic_token(role, email, ttl=None):
-    """Role + email + expiry, signed. Dev-mode: returned to the caller."""
+    """Role + email + nonce + expiry, signed. Nonce makes it one-time-use."""
+    nonce = secrets.token_hex(16)
     exp = int(_now().timestamp()) + (ttl or config.MAGIC_TTL_S)
-    payload = f"{role}|{email}|{exp}"
+    payload = f"{role}|{email}|{nonce}|{exp}"
     sig = _sign(payload)
     return f"{payload}|{sig}"
 
 
 def verify_magic_token(token):
-    """Return (role, email) if valid+unexpired, else None."""
+    """Return (role, email) if valid, unexpired, and not already used."""
     try:
-        role, email, exp, sig = token.split("|")
-        if hmac.compare_digest(_sign(f"{role}|{email}|{exp}"), sig):
-            if int(exp) > int(_now().timestamp()):
-                return role, email
+        role, email, nonce, exp, sig = token.split("|")
+        # Reject already-used links (one-time use) before anything else.
+        used = _used_nonces()
+        if nonce in used:
+            return None
+        if not hmac.compare_digest(_sign(f"{role}|{email}|{nonce}|{exp}"), sig):
+            return None
+        if int(exp) <= int(_now().timestamp()):
+            return None
+        # Mark used so a leaked/replayed link can't log in again.
+        used.append(nonce)
+        _save_used_nonces(used)
+        return role, email
     except (ValueError, TypeError):
-        pass
-    return None
+        return None
 
 
 # ---------------------------------------------------------------------------

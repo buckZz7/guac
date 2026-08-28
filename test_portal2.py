@@ -57,6 +57,7 @@ def main():
     env["ADGATE_ADS_FILE"] = "/dev/null"  # no static ads; rely on portal offers
     env["ADGATE_PUBLIC_HOST"] = "http://portal.local"
     env["ADGATE_MAGIC_SECRET"] = "test-secret"
+    env["ADGATE_MAGIC_USED_FILE"] = os.path.join(td, "magic_used.json")
 
     stub = start([PY, "stub.py", "--port", "8004"])
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8003"], cwd=ROOT,
@@ -79,6 +80,12 @@ def main():
         assert dash.status_code == 200
         assert "guac_" in dash.text and "bob@example.com" in dash.text
         print("user dashboard (key + base_url):", "✓")
+
+        # 2b) one-time-use: replaying the same link must fail (link already used)
+        dash2 = httpx.get(GW + link.replace("http://portal.local", ""))
+        assert "guac_" not in dash2.text and "invalid" in dash2.text.lower(), \
+            "replayed magic link should be rejected (one-time-use)"
+        print("one-time-use (replay rejected):", "✓")
 
         # 3) advertiser login -> magic link -> ad manager
         r = httpx.post(GW + "/portal/advertiser/login", data={"email": "acme@example.com"})

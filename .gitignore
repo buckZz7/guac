@@ -6,6 +6,7 @@ supplier_state.json
 users.json
 offers.json
 advertisers.json
+magic_used.json
 *.pyc
 __pycache__/
 .venv/
