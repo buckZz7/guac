@@ -125,6 +125,12 @@ def main():
         print("operator /settle statement (master-key protected):", "✓")
         print("settlement conservation (no negative saving):", "✓")
 
+        # 7) deep health check: 200 when a supplier is healthy
+        hz = httpx.get(GW + "/healthz")
+        assert hz.status_code == 200, hz.text
+        assert "healthy_suppliers" in hz.json()
+        print("deep /healthz (app + supplier + volume):", "✓")
+
         print("REQ1 supplier:", "primary ✓")
         print("REQ2 (A failed) supplier:", "secondary ✓")
         print("REQ3 (A recovered) supplier:", "primary ✓")

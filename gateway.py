@@ -112,6 +112,32 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/healthz")
+def healthz():
+    """Deep health check for alerting. Returns HTTP 200 only if the app is up
+    AND at least one supplier is healthy AND the state volume is writable.
+    Otherwise 503 with a reason — so a poller can alert on a non-200."""
+    problems = []
+    # 1) at least one healthy supplier (else no requests can be served)
+    healthy = [s.name for s in POOL.suppliers if s.healthy()]
+    if not healthy:
+        problems.append("no healthy suppliers")
+
+    # 2) state volume writable (can the gateway persist state?)
+    probe = config.STATE_FILE.with_suffix(config.STATE_FILE.suffix + ".probe")
+    try:
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok")
+        probe.unlink()
+    except Exception:
+        problems.append("state volume not writable")
+
+    if problems:
+        return JSONResponse({"status": "degraded", "problems": problems},
+                            status_code=503)
+    return {"status": "ok", "healthy_suppliers": healthy}
+
+
 @app.get("/_pool")
 def pool_status():
     """Debug route: supplier pool quality state."""
