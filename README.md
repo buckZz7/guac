@@ -137,6 +137,7 @@ hermes config set model.api_key dev-gateway-key
 | `POST /v1/chat/completions` | OpenAI-compatible inference (ad-aware) |
 | `POST /v1/guac/attribution` | Agent reports it acted on an offer (the "click") |
 | `GET /dashboard` | Impressions + clicks + supplier quality |
+| `GET /settle` | Operator settlement statement from the live ledger (master key) |
 | `GET /_pool` | Supplier pool quality state (debug) |
 
 ## Config (env)

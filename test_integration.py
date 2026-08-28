@@ -116,13 +116,22 @@ def main():
         assert "primary" in html and "secondary" in html
         assert "Redeemed" in html, "funnel column missing"
 
+        # 6) operator /settle endpoint (master-key protected) returns a statement
+        noauth = httpx.get(GW + "/settle")
+        assert noauth.status_code == 401, noauth.status_code
+        s = httpx.get(GW + "/settle", headers={"authorization": f"Bearer {KEY}"}).json()
+        assert s["ads_delivered"] >= 1 and s["guac_margin"] >= 0, s
+        assert s["user_saving"] >= 0, "negative saving"
+        print("operator /settle statement (master-key protected):", "✓")
+        print("settlement conservation (no negative saving):", "✓")
+
         print("REQ1 supplier:", "primary ✓")
         print("REQ2 (A failed) supplier:", "secondary ✓")
         print("REQ3 (A recovered) supplier:", "primary ✓")
         print("attribution funnel (viewed/clicked/redeemed):", "✓")
         print("invalid action rejected:", "✓")
         print("dashboard 200, renders supplier pool:", "✓")
-        print("\nINTEGRATION TESTS PASSED (failover + attribution + dashboard)")
+        print("\nINTEGRATION TESTS PASSED (failover + attribution + dashboard + settle)")
     finally:
         gw.kill(); stub_a.kill(); stub_b.kill()
 

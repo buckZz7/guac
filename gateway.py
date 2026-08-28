@@ -23,6 +23,7 @@ import config
 from suppliers import load_pool
 import portal
 import portal_html
+import settlement
 
 app = FastAPI(title="guac")
 
@@ -339,6 +340,29 @@ def _auth_advertiser(request):
         return "master"
     adv = portal.get_advertiser_by_token(api_key)
     return adv.get("email") if adv else None
+
+
+@app.get("/settle")
+async def settle_endpoint(request: Request):
+    """Operator settlement statement from the live ledger. Master-key only.
+    Makes the transparent split actually visible to the operator over HTTP —
+    no SSH into the box needed. Returns the settlement JSON; ?html=1 renders
+    the human statement."""
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    if api_key != config.GATEWAY_KEY:
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    rows = _read_ledger(config.LEDGER_FILE)
+    if not rows:
+        return {"period": _dt.date.today().isoformat(),
+                "requests": 0, "tokens_total": 0, "ads_delivered": 0,
+                "ad_revenue": 0.0, "guac_fee": 0.0, "wholesale_cost": 0.0,
+                "retail_cost": 0.0, "user_paid": 0.0, "user_saving": 0.0,
+                "guac_margin": 0.0, "message": "no ledger rows yet"}
+    s = settlement.settle(rows)
+    if request.query_params.get("html"):
+        return HTMLResponse("<pre>" + settlement.render_statement(s) + "</pre>")
+    return s
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
