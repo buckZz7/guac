@@ -9,9 +9,17 @@ import datetime as _dt
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import threading
 
 import config
+
+# Guards all read-modify-write on the flat-JSON store. uvicorn runs async
+# handlers; without a lock, two concurrent requests can read-modify-write the
+# same file and lose an update (e.g. two impressions charged but one counted).
+# All portal mutations go through this lock.
+_LOCK = threading.RLock()
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +40,21 @@ def _read_json(path, default):
 
 
 def _write_json(path, data):
+    # Atomic write: write to a temp file in the same dir, then rename over the
+    # target. A crash mid-write can't leave a truncated/corrupt store.
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
+
+
+def _mutate(load, save, fn):
+    """Run a read-modify-write under the lock: load, apply fn, save."""
+    with _LOCK:
+        data = load()
+        result = fn(data)
+        save(data)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -50,19 +71,19 @@ def _save_users(users):
 
 def create_user(email, ads_per_day=1):
     """Create a user, return their record (with a fresh API key)."""
-    users = _users()
-    if email in users:
-        return None, "email already registered"
-    api_key = "guac_" + secrets.token_hex(16)
-    users[email] = {
-        "email": email,
-        "api_key": api_key,
-        "ads_per_day": ads_per_day,
-        "created": _now().isoformat(),
-        "active": True,
-    }
-    _save_users(users)
-    return users[email], None
+    def _apply(users):
+        if email in users:
+            return None, "email already registered"
+        api_key = "guac_" + secrets.token_hex(16)
+        users[email] = {
+            "email": email,
+            "api_key": api_key,
+            "ads_per_day": ads_per_day,
+            "created": _now().isoformat(),
+            "active": True,
+        }
+        return users[email], None
+    return _mutate(_users, _save_users, _apply)
 
 
 def get_user_by_key(api_key):
@@ -77,12 +98,12 @@ def get_user_by_email(email):
 
 
 def update_user(email, **fields):
-    users = _users()
-    if email not in users:
-        return None
-    users[email].update(fields)
-    _save_users(users)
-    return users[email]
+    def _apply(users):
+        if email not in users:
+            return None
+        users[email].update(fields)
+        return users[email]
+    return _mutate(_users, _save_users, _apply)
 
 
 def verify_gateway_key(api_key):
@@ -119,19 +140,19 @@ def _save_advertisers(ads):
 
 def create_advertiser(email):
     """Create an advertiser account, return it (with a fresh token)."""
-    ads = _advertisers()
     email = email.strip().lower()
-    if email in ads:
-        return None, "email already registered"
-    token = "adv_" + secrets.token_hex(16)
-    ads[email] = {
-        "email": email,
-        "token": token,
-        "created": _now().isoformat(),
-        "active": True,
-    }
-    _save_advertisers(ads)
-    return ads[email], None
+    def _apply(ads):
+        if email in ads:
+            return None, "email already registered"
+        token = "adv_" + secrets.token_hex(16)
+        ads[email] = {
+            "email": email,
+            "token": token,
+            "created": _now().isoformat(),
+            "active": True,
+        }
+        return ads[email], None
+    return _mutate(_advertisers, _save_advertisers, _apply)
 
 
 def get_advertiser(email):
@@ -205,25 +226,25 @@ def _save_offers(offers):
 
 def create_offer(advertiser_email, headline, body, claim, budget, offer_type="discount"):
     """Create an advertiser offer. budget = max impressions (per-impression)."""
-    offers = _offers()
-    oid = "sponsor-" + secrets.token_hex(4)
-    offer = {
-        "id": oid,
-        "advertiser": advertiser_email,
-        "headline": headline,
-        "body": body,
-        "claim": claim,
-        "offer_type": offer_type,
-        "budget": float(budget),
-        "impressions": 0,          # delivered "brought to you by" count
-        "spent": 0.0,
-        "active": True,
-        "paused": False,
-        "created": _now().isoformat(),
-    }
-    offers.append(offer)
-    _save_offers(offers)
-    return offer
+    def _apply(offers):
+        oid = "sponsor-" + secrets.token_hex(4)
+        offer = {
+            "id": oid,
+            "advertiser": advertiser_email,
+            "headline": headline,
+            "body": body,
+            "claim": claim,
+            "offer_type": offer_type,
+            "budget": float(budget),
+            "impressions": 0,          # delivered "brought to you by" count
+            "spent": 0.0,
+            "active": True,
+            "paused": False,
+            "created": _now().isoformat(),
+        }
+        offers.append(offer)
+        return offer
+    return _mutate(_offers, _save_offers, _apply)
 
 
 def get_offer(offer_id):
@@ -234,29 +255,31 @@ def get_offer(offer_id):
 
 
 def set_offer_paused(offer_id, paused):
-    offers = _offers()
-    for o in offers:
-        if o["id"] == offer_id:
-            o["paused"] = bool(paused)
-            _save_offers(offers)
-            return o
-    return None
+    def _apply(offers):
+        for o in offers:
+            if o["id"] == offer_id:
+                o["paused"] = bool(paused)
+                return o
+        return None
+    return _mutate(_offers, _save_offers, _apply)
 
 
 def charge_impression(offer_id):
     """Record one delivered impression. Returns (offer, cost) if the offer
-    exists, else (None, 0.0). Auto-pauses when the budget is spent."""
-    offers = _offers()
-    for o in offers:
-        if o["id"] == offer_id:
-            o["impressions"] += 1
-            o["spent"] = o["impressions"] * config.IMPRESSION_COST
-            if o["spent"] >= o["budget"]:
-                o["active"] = False
-                o["paused"] = True
-            _save_offers(offers)
-            return o, config.IMPRESSION_COST
-    return None, 0.0
+    exists, else (None, 0.0). Auto-pauses when the budget is spent.
+    Thread-safe: the read-modify-write is atomic under the portal lock, so two
+    concurrent requests can't lose an impression count."""
+    def _apply(offers):
+        for o in offers:
+            if o["id"] == offer_id:
+                o["impressions"] += 1
+                o["spent"] = o["impressions"] * config.IMPRESSION_COST
+                if o["spent"] >= o["budget"]:
+                    o["active"] = False
+                    o["paused"] = True
+                return o, config.IMPRESSION_COST
+        return None, 0.0
+    return _mutate(_offers, _save_offers, _apply)
 
 
 def offers_for_advertiser(email):

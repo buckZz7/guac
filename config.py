@@ -1,9 +1,13 @@
 """guac configuration — read from env, minimal by design."""
 import json
 import os
+import threading
 from pathlib import Path
-
 BASE = Path(os.path.dirname(os.path.abspath(__file__)))
+
+# Guards the runtime JSON/ledger writes. The gateway runs async handlers, so
+# concurrent requests can otherwise race on the state + ledger files.
+_LOCK = threading.RLock()
 
 # Upstream real inference provider (OpenAI-compatible). Swap these to go live.
 UPSTREAM_BASE = os.environ.get("ADGATE_UPSTREAM_BASE", "http://127.0.0.1:8001/v1")
@@ -87,8 +91,12 @@ def load_state():
 
 def save_state(state):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
+    # Atomic write under the lock: crash mid-write can't leave a truncated file.
+    with _LOCK:
+        tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + ".tmp")
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, STATE_FILE)
 
 
 def log_ledger(entry):
@@ -97,5 +105,7 @@ def log_ledger(entry):
 
 def log_ledger_row(path, entry):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    # Serialize appends so concurrent requests write whole, non-interleaved lines.
+    with _LOCK:
+        with open(path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
