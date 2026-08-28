@@ -148,19 +148,30 @@ async def chat_completions(request: Request):
             sup_body["model"] = supplier.model
         t0 = time.monotonic()
         try:
+            # Streaming: keep the client alive for the whole generator, and
+            # record quality only after the stream completes (a 200 header with
+            # a truncated body is a failure). Non-stream: simple post.
+            if stream:
+                async def gen():
+                    async with httpx.AsyncClient(timeout=120) as client:
+                        req = client.build_request("POST", upstream, headers=sup_headers, json=sup_body)
+                        resp = await client.send(req, stream=True)
+                        ok = True
+                        nbytes = 0
+                        try:
+                            async for chunk in resp.aiter_bytes():
+                                nbytes += len(chunk)
+                                yield chunk
+                        finally:
+                            ok = (resp.status_code == 200 and nbytes > 0)
+                            supplier.record(ok, (time.monotonic() - t0) * 1000)
+                            POOL.save_state()
+                            if not ok:
+                                await resp.aclose()
+
+                return StreamingResponse(gen(), media_type="text/event-stream")
+
             async with httpx.AsyncClient(timeout=120) as client:
-                if stream:
-                    req = client.build_request("POST", upstream, headers=sup_headers, json=sup_body)
-                    resp = await client.send(req, stream=True)
-                    supplier.record(True, (time.monotonic() - t0) * 1000)
-                    POOL.save_state()
-
-                    async def gen():
-                        async for chunk in resp.aiter_bytes():
-                            yield chunk
-
-                    return StreamingResponse(gen(), media_type="text/event-stream")
-
                 resp = await client.post(upstream, headers=sup_headers, json=sup_body)
                 data = resp.json()
             supplier.record(resp.status_code == 200, (time.monotonic() - t0) * 1000)

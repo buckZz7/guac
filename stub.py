@@ -5,6 +5,7 @@ import argparse
 import json
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="FakeUpstream")
 
@@ -40,6 +41,25 @@ async def completions(request: Request):
     injected = "Sponsored offer" in (sys[0] if sys else "")
     # Count tokens crudely for the meter.
     prompt = sum(len(s.split()) for s in sys) + len(last_user.split())
+
+    # SSE streaming mode (used by the streaming regression test).
+    if body.get("stream"):
+        content = "(stub) " + last_user[:40] + (" | ad-injected" if injected else "")
+        import time as _t
+        async def sse():
+            for tok in content.split(" "):
+                chunk = {"id": "cmpl-stub", "object": "chat.completion.chunk",
+                         "created": 0, "model": body.get("model", "stub"),
+                         "choices": [{"index": 0, "delta": {"content": tok + " "},
+                                      "finish_reason": None}]}
+                yield f"data: {json.dumps(chunk)}\n\n"
+            done = {"id": "cmpl-stub", "object": "chat.completion.chunk",
+                    "created": 0, "model": body.get("model", "stub"),
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+            yield f"data: {json.dumps(done)}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(sse(), media_type="text/event-stream")
+
     return {
         "id": "cmpl-stub",
         "object": "chat.completion",

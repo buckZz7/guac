@@ -92,6 +92,16 @@ def main():
         print("REQ2 sponsored:", sponsored2)
         assert sponsored and not sponsored2, "ad cadence wrong"
 
+        # streaming path must actually stream bytes (regression: it used to
+        # return 200 with 0 bytes because the client closed before the generator)
+        with client.stream("POST", "/v1/chat/completions",
+                           json={**payload, "stream": True}) as rs:
+            assert rs.status_code == 200, rs.status_code
+            body = b"".join(rs.iter_bytes())
+        assert len(body) > 0, "streaming returned 0 bytes (client closed early?)"
+        print("streaming returned bytes:", len(body), "> 0 ✓")
+
+
         # ledger got two rows, one sponsored with discount
         with open(os.path.join(ROOT, "ledger.jsonl")) as f:
             rows = [json.loads(l) for l in f if l.strip()]
