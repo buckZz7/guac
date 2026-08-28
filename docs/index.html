@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>guac — sponsored offers lower your AI token cost</title>
-<meta name="description" content="guac is an ad-aware inference gateway. Opt into sponsored offers, route through cheap quality-gated suppliers, and pay less per token. The split is always public.">
+<meta name="description" content="guac is an ad-aware inference gateway. Opt into sponsored offers, route through cheap quality-gated suppliers, and pay less per token. The split is always public. Self-serve portal for users and advertisers.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -56,6 +56,10 @@
              font-family: "JetBrains Mono", monospace; font-size: 0.82rem; overflow-x: auto; color: #b8c0d0; }
   .code .c { color: #5a6273; }
   .code .g { color: #7ac74f; }
+  /* live banner */
+  .live { display:inline-flex; align-items:center; gap:.5rem; background:#11151e; border:1px solid #2a3346;
+          border-radius:999px; padding:.45rem 1rem; font-size:.85rem; color:#aeb6c7; }
+  .live .pulse { width:8px; height:8px; border-radius:50%; background:#7ac74f; box-shadow:0 0 0 0 rgba(122,199,79,.5); }
   /* footer */
   footer { border-top: 1px solid #1a2130; margin-top: 4rem; padding: 2rem 0 3rem;
            color: #5a6273; font-size: 0.85rem; }
@@ -71,18 +75,19 @@
     <div class="logo">guac<span class="dot">.</span></div>
     <nav>
       <a href="#model">Model</a>
-      <a href="#supply">Supply</a>
+      <a href="#advertisers">Advertisers</a>
       <a href="#run">Run</a>
       <a href="https://github.com/buckZz7/guac">GitHub</a>
     </nav>
   </header>
 
   <div class="hero">
-    <div class="eyebrow">ad-aware inference gateway</div>
+    <div class="eyebrow">ad-aware inference gateway · live</div>
+    <div class="live" style="margin-bottom:1.25rem"><span class="pulse"></span><span>https://addguac.fly.dev</span></div>
     <h1>Sponsored offers lower<br>your <span class="hl">per-token</span> cost.</h1>
     <p class="lede">guac sits between your agent and its model. You opt into a few sponsored offers a day. That advertiser money — plus cheap, quality-gated supply — cuts what you pay for inference. The sponsorship is a simple <b>"brought to you by"</b> message you see on the response; the model is never touched. No credits, no wallets. <b>The price is just lower.</b></p>
     <div class="cta">
-      <a class="btn btn-primary" href="#run">Run it</a>
+      <a class="btn btn-primary" href="https://addguac.fly.dev/portal">Open the portal</a>
       <a class="btn btn-ghost" href="#model">How it works</a>
     </div>
   </div>
@@ -95,7 +100,7 @@
     <h2>How the money flows</h2>
     <div class="grid3">
       <div class="card"><div class="ic">🎯</div><h3>You opt in</h3>
-        <p>Pick how many sponsored offers a day to see (1 / 5 / 10). More offers, bigger discount. That's the whole user surface.</p></div>
+        <p>Pick how many sponsored offers a day to see (1 / 5 / 10). More offers, bigger discount. Sign up in the portal, get an API key + base URL.</p></div>
       <div class="card"><div class="ic">💬</div><h3>"Brought to you by"</h3>
         <p>The sponsorship rides on the response for you to see — it's never fed into the model, so it costs no tokens and never influences inference.</p></div>
       <div class="card"><div class="ic">🧾</div><h3>Transparent split</h3>
@@ -103,11 +108,23 @@
     </div>
   </section>
 
+  <section id="advertisers">
+    <h2>For advertisers — a real ad manager</h2>
+    <div class="grid3">
+      <div class="card"><div class="ic">🖥️</div><h3>Self-serve console</h3>
+        <p>Sign in with a magic link, create offers, set a budget, pause or resume anytime. No sales call, no master key.</p></div>
+      <div class="card"><div class="ic">📊</div><h3>Per-impression billing</h3>
+        <p>You're billed per delivered impression. See spend, impressions, and budget remaining in real time. An offer auto-pauses when its budget is spent.</p></div>
+      <div class="card"><div class="ic">✅</div><h3>Honest clicks</h3>
+        <p>Clicks are logged only when the agent actually acts on your offer — an attribution callback. Proof the offer mattered, not that it was shown.</p></div>
+    </div>
+  </section>
+
   <section id="supply">
     <h2>Cheap supply, gated on quality</h2>
     <div class="grid3">
       <div class="card"><div class="ic">⚡</div><h3>Quality first</h3>
-        <p>Never "cheapest miner wins." Each source is scored deterministically on latency + success. Degraded suppliers are dropped until they recover.</p></div>
+        <p>Never "cheapest miner wins." Each source is scored deterministically on latency + success. Degraded suppliers recover after a cooldown.</p></div>
       <div class="card"><div class="ic">🔁</div><h3>Failover</h3>
         <p>Requests route across the pool. One miner's bad day is never your bad day.</p></div>
       <div class="card"><div class="ic">📈</div><h3>Real stats</h3>
@@ -116,11 +133,16 @@
   </section>
 
   <section id="run">
-    <h2>Run it</h2>
-    <pre class="code"><span class="c"># gateway is OpenAI-compatible. Point any agent at it.</span>
-<span class="g">$</span> .venv/bin/python gateway.py --port 8000
+    <h2>Run it — it's live</h2>
+    <p style="color:#8b93a7;max-width:40rem;margin-bottom:1.25rem">guac runs as a hosted service. Sign up at the portal to get an API key + base URL, then point any OpenAI-compatible agent at it.</p>
+    <pre class="code"><span class="c"># gateway is OpenAI-compatible. Point any agent at the hosted service.</span>
+<span class="g">$</span> # 1. get a key at https://addguac.fly.dev/portal
 <span class="g">$</span> hermes config set model.provider custom
-<span class="g">$</span> hermes config set model.base_url http://&lt;host&gt;:8000/v1</pre>
+<span class="g">$</span> hermes config set model.base_url https://addguac.fly.dev/v1
+<span class="g">$</span> hermes config set model.api_key guac_&lt;your-key&gt;
+
+<span class="c"># or self-host from source</span>
+<span class="g">$</span> .venv/bin/python gateway.py --port 8000</pre>
   </section>
 
   <footer>
@@ -128,6 +150,7 @@
     <div class="foot-links">
       <a href="https://github.com/buckZz7/guac">GitHub</a>
       <a href="https://github.com/buckZz7/guac/blob/main/DESIGN.md">Design</a>
+      <a href="https://addguac.fly.dev/portal">Portal</a>
     </div>
   </footer>
 </div>

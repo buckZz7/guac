@@ -46,20 +46,30 @@ One free Fly.io account, signed in at https://fly.io.
    - `OPENROUTER_API_KEY` = your OpenRouter key (optional retail fallback)
    - Without at least one supplier key, `/v1/chat/completions` returns
      `502 all suppliers failed` — the quality gate correctly rejects empty-key
-     suppliers. `/health`, `/v1/models`, `/signup`, and `/dashboard` all still
-     work regardless.
+     suppliers. `/health`, `/v1/models`, `/signup`, `/dashboard`, and `/portal`
+     all still work regardless.
 
-8. **Deploy.** Hit **Deploy**. Fly builds the Dockerfile and gives you a public
+8. **Set the portal magic-link secret.** In **Secrets**:
+   - `ADGATE_MAGIC_SECRET` = a long random string. This signs portal login
+     links. Generate one, e.g. `openssl rand -hex 32`. Without it, the dev
+     default is used, which anyone could forge.
+
+9. **Deploy.** Hit **Deploy**. Fly builds the Dockerfile and gives you a public
    HTTPS URL in ~2 minutes.
 
-9. **Verify:**
-   - `https://<app>.fly.dev/health` → `{"status":"ok"}`
-   - `https://<app>.fly.dev/dashboard` → the stats dashboard
-   - `https://<app>.fly.dev/v1/models` → OpenAI-compatible model list
+10. **Verify:**
+    - `https://<app>.fly.dev/health` → `{"status":"ok"}`
+    - `https://<app>.fly.dev/dashboard` → the stats dashboard
+    - `https://<app>.fly.dev/v1/models` → OpenAI-compatible model list
+    - `https://<app>.fly.dev/portal` → the self-serve portal
 
 ## Using it
 
-**Users sign up** (self-serve):
+**Portal (recommended)** — self-serve web UI at `https://<app>.fly.dev/portal`:
+- Users: magic-link login, view/re-copy API key + base_url, adjust ads/day
+- Advertisers: magic-link login, ad manager (create/pause/toggle offers), per-impression billing
+
+**Users sign up** (API):
 ```
 POST https://<app>.fly.dev/signup
 {"email": "you@example.com", "ads_per_day": 1}
@@ -73,10 +83,10 @@ hermes config set model.base_url https://<app>.fly.dev/v1
 hermes config set model.api_key <your-guac-api-key>
 ```
 
-**Advertisers submit offers** (with the gateway key):
+**Advertisers** (API, their own token):
 ```
 POST https://<app>.fly.dev/advertiser/offer
-{"advertiser": "Acme", "headline": "50% off hosting", "budget": 100.0}
+{"headline": "50% off hosting", "budget": 100.0}
 ```
 Stats: `GET https://<app>.fly.dev/advertiser/stats`
 

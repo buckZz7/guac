@@ -145,6 +145,7 @@ Supply is the lever that turns a thin-margin niche into a real business.
 
 1. **Gateway** (done, verified) — inject + meter + price.
 2. **Settlement** — monthly bill, transparent split.
-3. **Quality gate + failover** — the Bittensor supplier pool.
+3. **Quality gate + failover** — the Bittensor supplier pool (done, + recovery).
 4. **Attribution callback** — the "click" metric.
 5. **Dashboard** — impressions + clicks for both sides.
+6. **Portal** — magic-link auth for users + advertisers, ad manager, per-impression billing (done, live).

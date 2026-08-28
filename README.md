@@ -47,28 +47,33 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 | File | Purpose |
 |------|---------|
 | `gateway.py` | OpenAI-compatible proxy: sponsorship, metering, routing, dashboard, attribution, portal routes |
-| `suppliers.py` | Quality-gated supplier pool with deterministic scoring + failover |
+| `suppliers.py` | Quality-gated supplier pool with deterministic scoring + failover + recovery |
 | `settlement.py` | Monthly statement from the ledger (Model B economics) |
-| `portal.py` | Self-serve sign-up (users) + advertiser offers/stats |
+| `portal.py` | Self-serve sign-up (users) + advertiser accounts/offers + per-impression billing + magic-link auth |
+| `portal_html.py` | Server-rendered HTML UI for the portal (user + advertiser consoles) |
 | `daily.py` | Emits the daily "brought to you by" sponsorship (companion delivery) |
 | `config.py` | Env-driven configuration |
-| `ads.json` | Sponsor offers |
+| `ads.json` | Sponsor offers (fallback) |
 | `suppliers.json` | Inference sources (Chutes SN64 + OpenRouter; keys via env) |
 | `stub.py` | OpenAI-compatible stub upstream for tests |
 | `test_*.py` | Test suites |
 
-## Portal (self-serve)
+## Portal (self-serve, live at /portal)
 
 **Users sign up** — get an API key + base_url:
 ```
 POST /signup    {"email": "...", "ads_per_day": 1}
-                -> {"api_key": "guac_...", "base_url": "https://.../v1"}
+                -> {"api_key": "guac_...", "base_url": "https://<host>/v1"}
 ```
+Or use the web UI (`/portal`) — magic-link login, re-view your key, adjust ads/day.
 
-**Advertisers submit offers** + see stats:
+**Advertisers** — magic-link login, no passwords:
+- **Ad manager UI** (`/portal`): create offers, set budgets, pause/resume, see live impressions/spend
+- **Per-impression billing**: each delivered "brought to you by" costs one impression; an offer auto-pauses when its budget is spent
+- **API** (advertiser's own token, not the master key):
 ```
-POST /advertiser/offer   {"advertiser","headline","budget",...}
-GET  /advertiser/stats
+POST /advertiser/offer   {"headline","body","claim","budget","offer_type"}
+GET  /advertiser/stats   -> offers scoped to that advertiser
 ```
 
 ## Daily delivery
@@ -144,6 +149,9 @@ hermes config set model.api_key dev-gateway-key
 | `ADGATE_ADS_FILE` | `ads.json` | sponsor offers |
 | `ADGATE_ADS_PER_DAY` | `1` | ads a user sees per day |
 | `ADGATE_DISCOUNT_RATE` | `0.20` | advertiser-funded % off |
+| `ADGATE_IMPRESSION_COST` | `0.01` | per-impression advertiser cost (budget ÷ cost = max impressions) |
+| `ADGATE_MAGIC_SECRET` | `dev-magic-secret` | signs portal magic-link tokens (set a real secret in prod) |
+| `ADGATE_MAGIC_TTL_S` | `900` | magic-link expiry (seconds) |
 | `ADGATE_GATEWAY_KEY` | `dev-gateway-key` | key the agent sends |
 | `ADGATE_STATE_FILE` | `state.json` | per-user ad cadence |
 | `ADGATE_LEDGER_FILE` | `ledger.jsonl` | metered usage + settlement |
@@ -161,10 +169,13 @@ hermes config set model.api_key dev-gateway-key
 ## Roadmap
 
 - Settlement module (done, Model B)
-- Supplier quality gate + failover (done)
+- Supplier quality gate + failover + recovery (done)
 - Attribution callback (done)
 - Dashboard (done)
 - Portal: user sign-up + advertiser offers/stats (done)
+- Portal: magic-link auth + advertiser ad manager + per-impression billing (done)
 - Daily sponsorship delivery (done)
 - Real suppliers wired (Chutes SN64 + OpenRouter, keys via env) (done)
-- Point the quality gate at more Bittensor subnets (SN53/SN28) as they come online
+- Live hosted deploy at addguac.fly.dev (done)
+- Wire more Bittensor subnets (SN53/SN28) into the quality pool as they come online
+- Real email delivery for magic links (currently dev-mode: link returned in response)
