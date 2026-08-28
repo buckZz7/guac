@@ -38,11 +38,13 @@ def approx(a, b, tol=1e-9):
 
 def test_real_per_impression():
     """The production path: the ledger records each sponsored row's actual
-    per-impression cost. Settlement must use THAT, not a hardcoded estimate."""
+    per-impression cost. Settlement must use THAT, not a hardcoded estimate.
+    guac's fee is capped at ad revenue (can't earn more than advertisers paid)."""
     rows = make_rows(10, 0, impression_cost=0.01)
     s = settlement.settle(rows)  # no ad_money override; must read ledger
     assert abs(s["ad_revenue"] - 0.10) < 1e-6, s["ad_revenue"]
-    assert abs(s["guac_fee"] - 1.00) < 1e-6, s["guac_fee"]
+    # fee = min(10 x $0.10 default, $0.10 ad revenue) = $0.10
+    assert abs(s["guac_fee"] - 0.10) < 1e-6, s["guac_fee"]
     print("real per-impression ad revenue ($0.10 for 10 imps @ $0.01):", "✓")
 
 

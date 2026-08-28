@@ -71,17 +71,21 @@ def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
     retail_cost = total_tk * retail_per_m / 1_000_000
     wholesale_cost = total_tk * wholesale_per_m / 1_000_000
 
-    # Real ad revenue: sum the actual per-impression cost recorded per row.
-    # Fall back to ad_money_per_offer only if no row recorded a cost.
-    recorded = [r.get("impression_cost", 0.0) for r in sponsored]
-    if any(c > 0 for c in recorded):
-        ad_revenue = sum(recorded)
-    else:
-        per_offer = ad_money_per_offer if ad_money_per_offer is not None else 0.30
-        ad_revenue = n_ads * per_offer
+    # Real ad revenue: sum each sponsored row's cost. Prefer the recorded
+    # per-impression cost; if a row is missing it (legacy/edge), fall back to
+    # the per-offer estimate so a sponsored impression is never worth $0.
+    per_offer = ad_money_per_offer if ad_money_per_offer is not None else 0.30
+    ad_revenue = 0.0
+    for r in sponsored:
+        c = r.get("impression_cost")
+        ad_revenue += c if (c is not None and c > 0) else per_offer
 
     guac_fee = n_ads * fee_per_offer
-    ad_pass_through = ad_revenue - guac_fee      # goes to lower user's bill
+    # Ad money passed through to the user. guac's fee comes out of the sponsor
+    # money — it must never push the user's bill above wholesale. So clamp the
+    # pass-through to [0, ad_revenue]: if the fee exceeds ad revenue, the
+    # shortfall comes out of guac's margin, not the user's savings.
+    ad_pass_through = max(0.0, ad_revenue - guac_fee)
 
     # User pays wholesale cost, minus the ad money passed through. Capped at 0.
     user_paid = wholesale_cost - ad_pass_through
@@ -98,6 +102,7 @@ def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
     ad_surplus = max(0.0, ad_pass_through - wholesale_cost)
 
     guac_margin = guac_fee     # thin fee only; user keeps the cheap supply
+    guac_fee = min(guac_fee, ad_revenue)  # guac can't earn more than advertisers paid
 
     return {
         "period": _today(),
