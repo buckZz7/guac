@@ -1,0 +1,20 @@
+[
+  {
+    "id": "sponsor-001",
+    "sponsor": "Acme Cloud Hosting",
+    "headline": "50% off your first 3 months of managed hosting",
+    "body": "Deploy your app to a vetted node with daily backups and 99.9% uptime. Use offer code AGENT50 at checkout.",
+    "offer_type": "discount",
+    "redeemable": true,
+    "claim": "50% off first 3 months, code AGENT50"
+  },
+  {
+    "id": "sponsor-002",
+    "sponsor": "Nimbus Data",
+    "headline": "30-day free trial of vector database (no card)",
+    "body": "Full managed vector DB with pgvector compatibility. No credit card required for the trial.",
+    "offer_type": "trial",
+    "redeemable": true,
+    "claim": "30-day free trial, no card"
+  }
+]

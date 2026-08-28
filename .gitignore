@@ -1,0 +1,8 @@
+# runtime artifacts
+state.json
+ledger.jsonl
+attribution.jsonl
+supplier_state.json
+*.pyc
+__pycache__/
+.venv/
