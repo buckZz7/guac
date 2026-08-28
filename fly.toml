@@ -1,0 +1,26 @@
+# guac gateway — Fly.io config
+app = "guac"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Run on the smallest cheap VM. Per-second billing; idle ≈ $0.
+[primary]
+  region = "iad"
+
+[mounts]
+  source = "guac_data"
+  destination = "/data"
+
+[env]
+  ADGATE_GATEWAY_KEY = "changeme-fly"
+  ADGATE_ADS_PER_DAY = "1"
+  ADGATE_DISCOUNT_RATE = "0.20"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]

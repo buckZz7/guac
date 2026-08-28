@@ -55,7 +55,30 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 | `stub.py` | OpenAI-compatible stub upstream for tests |
 | `test_*.py` | Test suites |
 
-## Run
+## Deploy (hosted service)
+
+guac is built to run as a hosted service. The Dockerfile + fly.toml deploy it to
+[Fly.io](https://fly.io) — a cheap, per-second-billed Linux VM that gives a
+public HTTPS URL. Idle cost ≈ $0.
+
+```bash
+# one-time
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
+# from the repo root
+fly launch --name guac
+fly secrets set ADGATE_GATEWAY_KEY="<your-key>"
+fly deploy
+
+# you get: https://guac.fly.dev/v1
+# users point their agent at it: base_url = https://guac.fly.dev/v1
+```
+
+State (ledger, cadence, supplier quality) persists on a Fly volume mounted at
+`/data` (see `fly.toml`).
+
+## Run (local dev)
 
 ```bash
 # 1. Configure real upstream(s) in suppliers.json (or set ADGATE_SUPPLIERS_FILE).

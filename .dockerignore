@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+state.json
+ledger.jsonl
+attribution.jsonl
+supplier_state.json
+.git/
+docs/

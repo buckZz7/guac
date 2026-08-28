@@ -1,0 +1,4 @@
+# guac runtime deps (Fly + local)
+fastapi
+uvicorn[standard]
+httpx
