@@ -31,13 +31,28 @@ def _state():
         return {}
 
 
+def _active_offers():
+    """Active portal offers (not paused, budget remaining), falling back to the
+    static ads.json if no portal offers are configured. Matches the gateway."""
+    portal_offers = [o for o in portal._offers()
+                     if o["active"] and not o["paused"]
+                     and o.get("spent", 0) < o.get("budget", 0)]
+    if portal_offers:
+        return portal_offers
+    return config.load_ads()
+
+
+def _sponsor_label(ad):
+    return ad.get("advertiser") or ad.get("sponsor") or "Sponsor"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--email", default="")
     ap.add_argument("--ads-per-day", type=int, default=1)
     args = ap.parse_args()
 
-    ads = config.load_ads()
+    ads = _active_offers()
     if not ads:
         print("(no sponsorships configured)")
         return
@@ -50,7 +65,7 @@ def main():
         picks.append(ads[(day_offset + i) % len(ads)])
 
     for ad in picks:
-        print(f"✨ Brought to you by {ad['sponsor']} — {ad['headline']}.")
+        print(f"✨ Brought to you by {_sponsor_label(ad)} — {ad.get('headline', '')}.")
         if ad.get("claim"):
             print(f"   Redeem: {ad['claim']}")
         if ad.get("body"):
