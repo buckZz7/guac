@@ -24,6 +24,7 @@ from suppliers import load_pool
 import portal
 import portal_html
 import settlement
+import backup
 
 app = FastAPI(title="guac")
 
@@ -363,6 +364,17 @@ async def settle_endpoint(request: Request):
     if request.query_params.get("html"):
         return HTMLResponse("<pre>" + settlement.render_statement(s) + "</pre>")
     return s
+
+
+@app.get("/backup")
+async def backup_endpoint(request: Request):
+    """Operator state backup — all persistent state as one JSON bundle.
+    Master-key only. Lets the operator snapshot the live volume anytime."""
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    if api_key != config.GATEWAY_KEY:
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    return backup.build_bundle()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
