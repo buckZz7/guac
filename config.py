@@ -25,6 +25,11 @@ STATE_FILE = Path(os.environ.get("ADGATE_STATE_FILE", str(BASE / "state.json")))
 # How many ads a user sees per day (user chose this). Start at 1.
 ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "1"))
 
+# Supplier quality scoring: latency below GRACE costs nothing (cheap inference
+# is naturally 1-3s even when reliable); above it score decays to zero at HARD.
+LATENCY_GRACE_MS = float(os.environ.get("ADGATE_LATENCY_GRACE_MS", "4000"))
+LATENCY_HARD_MS = float(os.environ.get("ADGATE_LATENCY_HARD_MS", "15000"))
+
 # Advertiser-funded discount the user gets off their token cost. 0.20 = 20% off.
 DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.20"))
 

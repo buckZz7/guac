@@ -58,13 +58,24 @@ class Supplier:
         return self.total_latency_ms / self.successes if self.successes else 0.0
 
     def score(self):
-        """Deterministic quality score: bid-weighted, latency-penalised."""
+        """Deterministic quality score: bid-weighted, latency-penalised.
+
+        Latency penalty only bites above a grace threshold (4s). Cheap
+        cross-provider inference routinely runs 1-3s even when reliable, so
+        penalising linearly from 0ms would drop a 100%-reliable supplier over
+        nothing. We only dock score once latency exceeds the grace band.
+        """
         sr = self.success_rate()
         # Need enough observations to trust the score (warmup gate).
         if self.successes < self.warmup_successes:
             return -1.0
-        # Penalty: above 2000ms avg latency, score drops; 1.0 = perfect.
-        latency_pen = min(1.0, self.avg_latency_ms() / 2000.0) if self.avg_latency_ms() else 0.0
+        # Penalty: below LATENCY_GRACE_MS there is no penalty (cheap suppliers
+        # are naturally 1-3s even when reliable); above it, score falls toward 0.
+        grace = config.LATENCY_GRACE_MS
+        latency_pen = 0.0
+        avg = self.avg_latency_ms()
+        if avg > grace:
+            latency_pen = min(1.0, (avg - grace) / (config.LATENCY_HARD_MS - grace))
         return self.bid * sr - latency_pen
 
     def proven_bad(self):
