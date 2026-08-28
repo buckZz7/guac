@@ -48,6 +48,26 @@ def test_real_per_impression():
     print("real per-impression ad revenue ($0.10 for 10 imps @ $0.01):", "✓")
 
 
+def test_real_supplier_pricing():
+    """When ledger rows carry a known supplier, wholesale cost uses real
+    per-model pricing (prompt/completion $/M), not a flat 35% guess."""
+    import config as _config
+    rows = [
+        {"supplier": "openrouter", "prompt_tokens": 1_000_000,
+         "completion_tokens": 0, "sponsored": False},
+        {"supplier": "openrouter", "prompt_tokens": 0,
+         "completion_tokens": 500_000, "sponsored": False},
+    ]
+    s = settlement.settle(rows)
+    # deepseek pricing: $0.25/M prompt, $1.00/M completion
+    # 1M prompt x 0.25 = 0.25 ; 500k completion x 1.00 = 0.50 -> 0.75
+    p_per_m, c_per_m = _config.MODEL_PRICING["openrouter"]
+    expected = (1_000_000 * p_per_m + 500_000 * c_per_m) / 1_000_000
+    assert abs(s["wholesale_cost"] - round(expected, 2)) < 0.02, \
+        (s["wholesale_cost"], expected)
+    print(f"real per-supplier wholesale pricing (openrouter deepseek): ✓")
+
+
 def test_fallback_when_no_cost():
     """Rows without impression_cost fall back to the per-offer estimate."""
     rows = make_rows(5, 0)  # no impression_cost
@@ -108,5 +128,6 @@ def main():
 
 if __name__ == "__main__":
     test_real_per_impression()
+    test_real_supplier_pricing()
     test_fallback_when_no_cost()
     main()

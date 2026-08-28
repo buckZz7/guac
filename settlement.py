@@ -47,6 +47,17 @@ def _tokens(r):
     return r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
 
 
+def _row_wholesale(r):
+    """Real wholesale cost of one ledger row, using per-supplier model pricing
+    (prompt/completion $/M). Falls back to 0 if the supplier is unknown."""
+    price = config.MODEL_PRICING.get(r.get("supplier"))
+    if not price:
+        return 0.0
+    p_per_m, c_per_m = price
+    return (r.get("prompt_tokens", 0) * p_per_m
+            + r.get("completion_tokens", 0) * c_per_m) / 1_000_000
+
+
 def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
            retail_per_m=1.50, wholesale_per_m=None):
     """Option B settlement.
@@ -69,7 +80,15 @@ def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
     n_requests = len(rows)
 
     retail_cost = total_tk * retail_per_m / 1_000_000
-    wholesale_cost = total_tk * wholesale_per_m / 1_000_000
+
+    # Wholesale cost: prefer real per-supplier model pricing when the ledger
+    # records a supplier we know; else fall back to the flat wholesale rate.
+    known_supplier = any(
+        r.get("supplier") in config.MODEL_PRICING for r in rows)
+    if known_supplier:
+        wholesale_cost = sum(_row_wholesale(r) for r in rows)
+    else:
+        wholesale_cost = total_tk * wholesale_per_m / 1_000_000
 
     # Real ad revenue: sum each sponsored row's cost. Prefer the recorded
     # per-impression cost; if a row is missing it (legacy/edge), fall back to

@@ -42,6 +42,16 @@ DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.20"))
 # An offer auto-pauses when its budget is spent.
 IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.01"))
 
+# Real per-model wholesale ($/M tokens) that guac pays its suppliers, keyed by
+# supplier name (from suppliers.json). Used by settlement so the transparent
+# split reflects real inference cost, not a flat 35%-of-retail guess.
+# Format: {supplier: (prompt_per_m, completion_per_m)}
+MODEL_PRICING = {
+    "openrouter": (0.25, 1.00),     # deepseek-chat-v3-0324 on OpenRouter
+    "chutes-sn64": (0.05, 0.30),    # approx open-model wholesale on Chutes
+    "engy-sn53": (0.20, 0.80),      # approx open-model wholesale on engy
+}
+
 # Magic-link auth for the portal. Short-lived signed tokens, no passwords.
 MAGIC_SECRET = os.environ.get("ADGATE_MAGIC_SECRET", "dev-magic-secret")
 MAGIC_TTL_S = int(os.environ.get("ADGATE_MAGIC_TTL_S", "900"))
