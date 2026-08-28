@@ -54,7 +54,7 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 | `daily.py` | Emits the daily "brought to you by" sponsorship (companion delivery) |
 | `config.py` | Env-driven configuration |
 | `ads.json` | Sponsor offers (fallback) |
-| `suppliers.json` | Inference sources (Chutes SN64 + OpenRouter; keys via env) |
+| `suppliers.json` | Inference sources (Chutes SN64, engy SN53, OpenRouter; keys via env) |
 | `stub.py` | OpenAI-compatible stub upstream for tests |
 | `test_*.py` | Test suites |
 
@@ -145,6 +145,7 @@ hermes config set model.api_key dev-gateway-key
 |-----|---------|---------|
 | `ADGATE_SUPPLIERS_FILE` | `suppliers.json` | inference source pool |
 | `CHUTES_API_KEY` | (empty) | key for Chutes SN64 supplier (starts `cpk_`) |
+| `ENGY_API_KEY` | (empty) | key for engy SN53 supplier (api.engy.ai) |
 | `OPENROUTER_API_KEY` | (empty) | key for OpenRouter supplier |
 | `ADGATE_ADS_FILE` | `ads.json` | sponsor offers |
 | `ADGATE_ADS_PER_DAY` | `1` | ads a user sees per day |
@@ -175,7 +176,7 @@ hermes config set model.api_key dev-gateway-key
 - Portal: user sign-up + advertiser offers/stats (done)
 - Portal: magic-link auth + advertiser ad manager + per-impression billing (done)
 - Daily sponsorship delivery (done)
-- Real suppliers wired (Chutes SN64 + OpenRouter, keys via env) (done)
+- Real suppliers wired (Chutes SN64, engy SN53, OpenRouter, keys via env) (done)
 - Live hosted deploy at addguac.fly.dev (done)
-- Wire more Bittensor subnets (SN53/SN28) into the quality pool as they come online
+- Add gm SN28 (saygm) as a supplier once invite access is granted (currently invite-gated waitlist)
 - Real email delivery for magic links (currently dev-mode: link returned in response)

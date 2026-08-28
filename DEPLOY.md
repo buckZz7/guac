@@ -43,6 +43,7 @@ One free Fly.io account, signed in at https://fly.io.
 
 7. **Set real supplier keys (for actual inference).** In **Secrets**:
    - `CHUTES_API_KEY` = your Chutes SN64 key (starts `cpk_`)
+   - `ENGY_API_KEY` = your engy SN53 key (api.engy.ai, open models like `glm-5.2`)
    - `OPENROUTER_API_KEY` = your OpenRouter key (optional retail fallback)
    - Without at least one supplier key, `/v1/chat/completions` returns
      `502 all suppliers failed` — the quality gate correctly rejects empty-key

@@ -23,6 +23,7 @@ ENV ADGATE_STATE_FILE=/data/state.json \
     ADGATE_ADS_FILE=/app/ads.json \
     ADGATE_SUPPLIERS_FILE=/app/suppliers.json \
     CHUTES_API_KEY= \
+    ENGY_API_KEY= \
     OPENROUTER_API_KEY=
 
 # Fly provides PORT; uvicorn binds it.
