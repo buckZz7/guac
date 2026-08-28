@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guac — sponsored offers lower your AI token cost</title>
+<meta name="description" content="guac is an ad-aware inference gateway. Opt into sponsored offers, route through cheap quality-gated suppliers, and pay less per token. The split is always public.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    background: #0b0e14; color: #e9ecf2; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+  /* header */
+  header { padding: 2rem 0 1rem; display: flex; align-items: center; gap: 0.75rem; }
+  .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+  .logo .dot { color: #7ac74f; }
+  nav { margin-left: auto; display: flex; gap: 1.25rem; font-size: 0.9rem; color: #8b93a7; }
+  nav a { color: #8b93a7; text-decoration: none; }
+  nav a:hover { color: #e9ecf2; }
+  /* hero */
+  .hero { padding: 5rem 0 3rem; }
+  .eyebrow { font-family: "JetBrains Mono", monospace; font-size: 0.78rem; letter-spacing: 0.12em;
+             text-transform: uppercase; color: #7ac74f; margin-bottom: 1.25rem; }
+  h1 { font-size: clamp(2.4rem, 6vw, 4rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
+  h1 .hl { color: #7ac74f; }
+  .lede { margin-top: 1.5rem; font-size: 1.2rem; color: #aeb6c7; max-width: 40rem; }
+  .lede b { color: #e9ecf2; font-weight: 600; }
+  .cta { margin-top: 2.25rem; display: flex; gap: 0.9rem; flex-wrap: wrap; }
+  .btn { padding: 0.85rem 1.5rem; border-radius: 10px; font-weight: 600; text-decoration: none;
+         font-size: 0.95rem; transition: transform .08s; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: #7ac74f; color: #0b0e14; }
+  .btn-ghost { border: 1px solid #2a3346; color: #e9ecf2; }
+  .btn-ghost:hover { border-color: #7ac74f; }
+  /* money flow */
+  .flow { margin: 4rem 0 1rem; font-family: "JetBrains Mono", monospace; font-size: 0.8rem;
+          background: #11151e; border: 1px solid #1f2735; border-radius: 14px; padding: 1.5rem;
+          overflow-x: auto; white-space: pre; color: #9aa3b5; }
+  .flow .acc { color: #7ac74f; }
+  /* sections */
+  section { padding: 3rem 0; }
+  h2 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card { background: #131824; border: 1px solid #1f2735; border-radius: 14px; padding: 1.4rem; }
+  .card h3 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+  .card p { color: #8b93a7; font-size: 0.92rem; }
+  .card .ic { font-size: 1.5rem; margin-bottom: 0.6rem; }
+  /* code */
+  pre.code { background: #0d1117; border: 1px solid #1f2735; border-radius: 12px; padding: 1.25rem;
+             font-family: "JetBrains Mono", monospace; font-size: 0.82rem; overflow-x: auto; color: #b8c0d0; }
+  .code .c { color: #5a6273; }
+  .code .g { color: #7ac74f; }
+  /* footer */
+  footer { border-top: 1px solid #1a2130; margin-top: 4rem; padding: 2rem 0 3rem;
+           color: #5a6273; font-size: 0.85rem; }
+  .foot-links { margin-top: 0.5rem; display: flex; gap: 1.25rem; }
+  .foot-links a { color: #8b93a7; text-decoration: none; }
+  .foot-links a:hover { color: #e9ecf2; }
+  a { color: #7ac74f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">guac<span class="dot">.</span></div>
+    <nav>
+      <a href="#model">Model</a>
+      <a href="#supply">Supply</a>
+      <a href="#run">Run</a>
+      <a href="https://github.com/buckZz7/guac">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div class="eyebrow">ad-aware inference gateway</div>
+    <h1>Sponsored offers lower<br>your <span class="hl">per-token</span> cost.</h1>
+    <p class="lede">guac sits between your agent and its model. You opt into a few sponsored offers a day. That advertiser money — plus cheap, quality-gated supply — cuts what you pay for inference. No credits, no wallets. <b>The price is just lower.</b></p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#run">Run it</a>
+      <a class="btn btn-ghost" href="#model">How it works</a>
+    </div>
+  </div>
+
+  <div class="flow"><span class="acc">advertiser</span> ──$──▶ <span class="acc">guac</span> ──$──▶ <span class="acc">suppliers</span>   (SN64 / SN53 / SN28 / retail)
+                    <span class="acc">guac</span> ──◀─ you pay a discounted rate ──
+  user_saving = (retail − wholesale) + (ad money − guac fee)   <span class="acc">· split always public</span></div>
+
+  <section id="model">
+    <h2>How the money flows</h2>
+    <div class="grid3">
+      <div class="card"><div class="ic">🎯</div><h3>You opt in</h3>
+        <p>Pick how many sponsored offers a day to see (1 / 5 / 10). More offers, bigger discount. That's the whole user surface.</p></div>
+      <div class="card"><div class="ic">🧠</div><h3>The agent stays a hard buyer</h3>
+        <p>An offer is awareness, not a directive. The agent evaluates it against real needs and only acts when it genuinely wins.</p></div>
+      <div class="card"><div class="ic">🧾</div><h3>Transparent split</h3>
+        <p>The discount is a lower price, never a credit. User saving = sponsor money minus guac's fee. Always public, always reconcilable.</p></div>
+    </div>
+  </section>
+
+  <section id="supply">
+    <h2>Cheap supply, gated on quality</h2>
+    <div class="grid3">
+      <div class="card"><div class="ic">⚡</div><h3>Quality first</h3>
+        <p>Never "cheapest miner wins." Each source is scored deterministically on latency + success. Degraded suppliers are dropped until they recover.</p></div>
+      <div class="card"><div class="ic">🔁</div><h3>Failover</h3>
+        <p>Requests route across the pool. One miner's bad day is never your bad day.</p></div>
+      <div class="card"><div class="ic">📈</div><h3>Real stats</h3>
+        <p>Impressions are metered per request. Clicks are honest — logged when the agent actually acts on an offer via an attribution callback.</p></div>
+    </div>
+  </section>
+
+  <section id="run">
+    <h2>Run it</h2>
+    <pre class="code"><span class="c"># gateway is OpenAI-compatible. Point any agent at it.</span>
+<span class="g">$</span> .venv/bin/python gateway.py --port 8000
+<span class="g">$</span> hermes config set model.provider custom
+<span class="g">$</span> hermes config set model.base_url http://&lt;host&gt;:8000/v1</pre>
+  </section>
+
+  <footer>
+    <div>guac — an open-source, ad-aware inference gateway. Keeps only its fee; the cheap-supply savings and ad money go to you.</div>
+    <div class="foot-links">
+      <a href="https://github.com/buckZz7/guac">GitHub</a>
+      <a href="https://github.com/buckZz7/guac/blob/main/DESIGN.md">Design</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
