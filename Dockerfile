@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the guac codebase.
-COPY config.py suppliers.py gateway.py portal.py portal_html.py daily.py stub.py ads.json suppliers.json ./
+COPY config.py suppliers.py settlement.py gateway.py portal.py portal_html.py daily.py stub.py ads.json suppliers.json ./
 
 # Runtime state + ledgers live in /data (a Fly volume if attached, else container).
 ENV ADGATE_STATE_FILE=/data/state.json \
