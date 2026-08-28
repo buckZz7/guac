@@ -13,14 +13,17 @@ import settlement
 PT, CT = 50000, 20000   # realistic agentic request tokens
 
 
-def make_rows(n_ads, n_plain):
+def make_rows(n_ads, n_plain, impression_cost=None):
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     rows = []
     for i in range(n_ads):
-        rows.append({"ts": now, "user": "alice", "sponsored": True,
-                     "sponsor": "Acme Cloud Hosting",
-                     "prompt_tokens": PT, "completion_tokens": CT,
-                     "discount_rate": 0.20})
+        r = {"ts": now, "user": "alice", "sponsored": True,
+             "sponsor": "Acme Cloud Hosting",
+             "prompt_tokens": PT, "completion_tokens": CT,
+             "discount_rate": 0.20}
+        if impression_cost is not None:
+            r["impression_cost"] = impression_cost
+        rows.append(r)
     for i in range(n_plain):
         rows.append({"ts": now, "user": "alice", "sponsored": False,
                      "sponsor": None,
@@ -31,6 +34,24 @@ def make_rows(n_ads, n_plain):
 
 def approx(a, b, tol=1e-9):
     return abs(a - b) < tol
+
+
+def test_real_per_impression():
+    """The production path: the ledger records each sponsored row's actual
+    per-impression cost. Settlement must use THAT, not a hardcoded estimate."""
+    rows = make_rows(10, 0, impression_cost=0.01)
+    s = settlement.settle(rows)  # no ad_money override; must read ledger
+    assert abs(s["ad_revenue"] - 0.10) < 1e-6, s["ad_revenue"]
+    assert abs(s["guac_fee"] - 1.00) < 1e-6, s["guac_fee"]
+    print("real per-impression ad revenue ($0.10 for 10 imps @ $0.01):", "✓")
+
+
+def test_fallback_when_no_cost():
+    """Rows without impression_cost fall back to the per-offer estimate."""
+    rows = make_rows(5, 0)  # no impression_cost
+    s = settlement.settle(rows, ad_money_per_offer=0.30)
+    assert abs(s["ad_revenue"] - 1.50) < 1e-6, s["ad_revenue"]
+    print("fallback to per-offer estimate when no cost recorded:", "✓")
 
 
 def main():
@@ -84,4 +105,6 @@ def main():
 
 
 if __name__ == "__main__":
+    test_real_per_impression()
+    test_fallback_when_no_cost()
     main()

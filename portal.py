@@ -244,8 +244,8 @@ def set_offer_paused(offer_id, paused):
 
 
 def charge_impression(offer_id):
-    """Record one delivered impression. Returns the offer if still active,
-    else None. Auto-pauses when the budget is spent."""
+    """Record one delivered impression. Returns (offer, cost) if the offer
+    exists, else (None, 0.0). Auto-pauses when the budget is spent."""
     offers = _offers()
     for o in offers:
         if o["id"] == offer_id:
@@ -255,8 +255,8 @@ def charge_impression(offer_id):
                 o["active"] = False
                 o["paused"] = True
             _save_offers(offers)
-            return o
-    return None
+            return o, config.IMPRESSION_COST
+    return None, 0.0
 
 
 def offers_for_advertiser(email):

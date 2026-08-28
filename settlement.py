@@ -47,11 +47,15 @@ def _tokens(r):
     return r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
 
 
-def settle(rows, ad_money_per_offer=0.30, fee_per_offer=0.10,
+def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
            retail_per_m=1.50, wholesale_per_m=None):
     """Option B settlement.
 
-    ad_money_per_offer : what a sponsor pays per delivered offer (A)
+    ad_revenue comes from the LEDGER: each sponsored row carries its actual
+    per-impression cost (`impression_cost`). This is the real money the
+    advertiser was charged, not an estimate. `ad_money_per_offer` is kept as an
+    optional override/fallback for rows without a recorded cost.
+
     fee_per_offer      : guac's flat fee per sponsored offer (F)
     retail_per_m       : market retail $/M tokens (R)
     wholesale_per_m    : what guac pays the source (W). Defaults to 35% of retail.
@@ -60,13 +64,22 @@ def settle(rows, ad_money_per_offer=0.30, fee_per_offer=0.10,
         wholesale_per_m = retail_per_m * 0.35
 
     total_tk = sum(_tokens(r) for r in rows)
-    n_ads = sum(1 for r in rows if r.get("sponsored"))
+    sponsored = [r for r in rows if r.get("sponsored")]
+    n_ads = len(sponsored)
     n_requests = len(rows)
 
     retail_cost = total_tk * retail_per_m / 1_000_000
     wholesale_cost = total_tk * wholesale_per_m / 1_000_000
 
-    ad_revenue = n_ads * ad_money_per_offer
+    # Real ad revenue: sum the actual per-impression cost recorded per row.
+    # Fall back to ad_money_per_offer only if no row recorded a cost.
+    recorded = [r.get("impression_cost", 0.0) for r in sponsored]
+    if any(c > 0 for c in recorded):
+        ad_revenue = sum(recorded)
+    else:
+        per_offer = ad_money_per_offer if ad_money_per_offer is not None else 0.30
+        ad_revenue = n_ads * per_offer
+
     guac_fee = n_ads * fee_per_offer
     ad_pass_through = ad_revenue - guac_fee      # goes to lower user's bill
 

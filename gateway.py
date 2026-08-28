@@ -211,17 +211,20 @@ async def chat_completions(request: Request):
     prompt_tk = usage.get("prompt_tokens", 0)
     completion_tk = usage.get("completion_tokens", 0)
     sponsor = None
+    impression_cost = 0.0
     if show_ad and offer:
         sponsor = offer.get("advertiser") or offer.get("sponsor")
         # Per-impression billing: record one delivered impression against the
-        # offer. Auto-pauses the offer when its budget is spent.
+        # offer, capturing the actual amount charged so settlement can compute
+        # real ad revenue (not a hardcoded per-offer estimate).
         if "advertiser" in offer:
-            portal.charge_impression(offer["id"])
+            _o, impression_cost = portal.charge_impression(offer["id"])
     config.log_ledger({
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "user": user_id,
         "sponsored": show_ad,
         "sponsor": sponsor,
+        "impression_cost": impression_cost,
         "supplier": chosen.name,
         "prompt_tokens": prompt_tk,
         "completion_tokens": completion_tk,
