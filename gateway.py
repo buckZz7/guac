@@ -18,7 +18,7 @@ import re
 import time
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 import httpx
 
 import config
@@ -132,7 +132,9 @@ def _footer_text(ad):
     if ad.get("image_url"):
         lines.append(f"![{sponsor}]({ad['image_url']})")
     if ad.get("link"):
-        lines.append(f"[Learn more]({ad['link']})")
+        # Route the link through /go/<offer_id> so the click is logged (honest
+        # funnel) before redirecting to the advertiser's destination.
+        lines.append(f"[Learn more](/go/{ad['id']})")
     return "\n".join(lines) + "\n"
 
 
@@ -383,6 +385,38 @@ async def chat_completions(request: Request):
         "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
     })
     return JSONResponse(data)
+
+
+@app.get("/go/{offer_id}")
+def offer_redirect(offer_id: str):
+    """Clickthrough redirect: /go/<offer_id> logs a real click on the offer and
+    302s to its link. This is the non-fakeable click — it only happens when
+    someone actually clicks the offer, and it works with ANY harness (no client
+    cooperation needed). Feeds the attribution funnel + can stamp tracking params.
+    """
+    # Look up the offer (portal store, then static ads.json fallback).
+    offer = portal.get_offer(offer_id)
+    if not offer:
+        for a in config.load_ads():
+            if a.get("id") == offer_id:
+                offer = a
+                break
+    if not offer:
+        return JSONResponse({"error": "offer not found"}, status_code=404)
+    link = offer.get("link")
+    if not link:
+        return JSONResponse({"error": "offer has no link"}, status_code=404)
+    # Record the click (honest funnel; attribution is also used by advertisers).
+    config.log_ledger_row(config.ATTRIBUTION_FILE, {
+        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "offer_id": offer_id,
+        "action": "clicked",
+        "source": "redirect",
+    })
+    # Stamp tracking params so the affiliate network attributes the conversion.
+    sep = "&" if "?" in link else "?"
+    target = f"{link}{sep}ref=guac&utm_source=guac&utm_campaign={offer_id}"
+    return RedirectResponse(target, status_code=302)
 
 
 @app.post("/v1/guac/attribution")

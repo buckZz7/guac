@@ -277,10 +277,12 @@ def charge_impression(offer_id):
     concurrent requests can't lose an impression count."""
     def _apply(offers):
         for o in offers:
-            if o["id"] == offer_id:
-                o["impressions"] += 1
-                o["spent"] = o["impressions"] * config.IMPRESSION_COST
-                if o["spent"] >= o["budget"]:
+            if o.get("id") == offer_id:
+                # Defensive: offers loaded from static ads.json (or other
+                # sources) may not carry portal bookkeeping fields.
+                o["impressions"] = o.get("impressions", 0) + 1
+                o["spent"] = o.get("spent", 0.0) + config.IMPRESSION_COST
+                if o["spent"] >= o.get("budget", 0):
                     o["active"] = False
                     o["paused"] = True
                 return o, config.IMPRESSION_COST

@@ -72,6 +72,19 @@ def main():
     sup_file = os.path.join(td, "suppliers.json")
     with open(sup_file, "w") as f:
         json.dump(sup, f)
+    # Hermetic offers (hosting + vector) so this test doesn't depend on ads.json.
+    offers = [
+        {"id": "sponsor-host", "sponsor": "Acme Cloud Hosting",
+         "headline": "50% off hosting", "body": "b", "claim": "AGENT50",
+         "intents": ["hosting", "host", "deploy"], "link": "https://acme.example/agent",
+         "active": True, "paused": False, "budget": 5.0, "spent": 0.0},
+        {"id": "sponsor-db", "sponsor": "Nimbus Data",
+         "headline": "vector database trial", "body": "b", "claim": "",
+         "intents": ["vector", "database", "db"], "link": "https://nimbus.example",
+         "active": True, "paused": False, "budget": 5.0, "spent": 0.0},
+    ]
+    with open(os.path.join(td, "offers.json"), "w") as f:
+        json.dump(offers, f)
 
     stub = start([PY, "stub.py", "--port", "8001"])
     env = dict(os.environ)

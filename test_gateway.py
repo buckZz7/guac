@@ -70,12 +70,27 @@ def main():
     sup_file = os.path.join(td, "suppliers.json")
     with open(sup_file, "w") as f:
         json.dump(sup, f)
+    # Hermetic offers (hosting + vector) so this test doesn't depend on ads.json.
+    offers = [
+        {"id": "sponsor-host", "sponsor": "Acme Cloud Hosting",
+         "headline": "50% off hosting", "body": "b", "claim": "AGENT50",
+         "intents": ["hosting", "host", "deploy"], "link": "https://acme.example/agent",
+         "image_url": "https://cdn.example.com/acme-hosting.png",
+         "active": True, "paused": False, "budget": 5.0, "spent": 0.0},
+        {"id": "sponsor-db", "sponsor": "Nimbus Data",
+         "headline": "vector database trial", "body": "b", "claim": "",
+         "intents": ["vector", "database", "db"], "link": "https://nimbus.example",
+         "active": True, "paused": False, "budget": 5.0, "spent": 0.0},
+    ]
+    offer_file = os.path.join(td, "offers.json")
+    with open(offer_file, "w") as f:
+        json.dump(offers, f)
 
     stub = start([PY, "stub.py", "--port", "8001"])
     env = dict(os.environ)
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_GATEWAY_KEY"] = KEY
-    # Hermetic: no portal offers -> gateway falls back to ads.json (has intents).
+    # Hermetic: hermetic offers file (hosting + vector), independent of ads.json.
     env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8000"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -106,7 +121,7 @@ def main():
             f"model content altered: {model_part!r}"
         assert "Sponsor: Acme Cloud Hosting" in footer
         assert "acme-hosting.png" in footer          # image render
-        assert "acme.example.com/agent" in footer    # link render
+        assert "/go/sponsor-host" in footer          # link routes through clickthrough
         assert d["guac"]["sponsorship"]["disclosed"] is True
         print("REQ1 non-stream sponsored ✓  model content byte-identical above ---")
 

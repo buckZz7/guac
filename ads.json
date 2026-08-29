@@ -1,26 +1,86 @@
 [
   {
-    "id": "sponsor-001",
-    "sponsor": "Acme Cloud Hosting",
-    "headline": "50% off your first 3 months of managed hosting",
-    "body": "Deploy your app to a vetted node with daily backups and 99.9% uptime. Use offer code AGENT50 at checkout.",
+    "id": "sponsor-cybertruck",
+    "sponsor": "Tesla",
+    "headline": "Order the Tesla Cybertruck — deliveries now scheduling",
+    "body": "All-electric pickup with 340 mi range, armored glass, and 11,000 lb towing. Fully refundable $100 order deposit.",
     "offer_type": "discount",
-    "redeemable": true,
-    "claim": "50% off first 3 months, code AGENT50",
-    "intents": ["hosting", "deploy", "host", "server", "node"],
-    "image_url": "https://cdn.example.com/acme-hosting.png",
-    "link": "https://acme.example.com/agent"
+    "redeemable": false,
+    "claim": "",
+    "intents": ["truck", "ev", "electric", "vehicle", "pickup", "car", "tesla"],
+    "image_url": "https://digitalassets.tesla.com/tesla-contents/image/upload/h_1200,w_1200,c_fit,f_auto,q_auto:best/Cybertruck-Std-Desktop-3200x1440",
+    "link": "https://www.tesla.com/cybertruck"
   },
   {
-    "id": "sponsor-002",
-    "sponsor": "Nimbus Data",
-    "headline": "30-day free trial of vector database (no card)",
-    "body": "Full managed vector DB with pgvector compatibility. No credit card required for the trial.",
+    "id": "sponsor-wendys",
+    "sponsor": "Wendy's",
+    "headline": "Wendy's Biggie Bag — $6, your choice of entrée + sides + drink",
+    "body": "Pick a Dave's Single or 4-piece nuggets, plus fries and a drink, for one price. Available in-app.",
+    "offer_type": "discount",
+    "redeemable": true,
+    "claim": "In the Wendy's app",
+    "intents": ["fast food", "food", "lunch", "dinner", "eat", "restaurant", "burger", "meal"],
+    "image_url": "https://order.wendys.com/Content/Images/Home/biggie-bag.png",
+    "link": "https://order.wendys.com"
+  },
+  {
+    "id": "sponsor-nordvpn",
+    "sponsor": "NordVPN",
+    "headline": "Get 66% off NordVPN for 2 years + 4 months free",
+    "body": "Military-grade encryption, 6,000+ servers in 111 countries, no-logs policy. Protects up to 6 devices.",
+    "offer_type": "discount",
+    "redeemable": true,
+    "claim": "Coupon: 66% off, use code on signup",
+    "intents": ["vpn", "privacy", "security", "encryption", "proxy", "surf", "tracking", "firewall"],
+    "image_url": "https://nordvpn.com/wp-content/uploads/2019/05/nordvpn-logo.png",
+    "link": "https://nordvpn.com"
+  },
+  {
+    "id": "sponsor-notion",
+    "sponsor": "Notion",
+    "headline": "Notion — all-in-one workspace, free for personal use",
+    "body": "Docs, wikis, tasks, and notes in one tool. Unlimited pages and AI for teams.",
     "offer_type": "trial",
     "redeemable": true,
-    "claim": "30-day free trial, no card",
-    "intents": ["database", "vector", "storage", "pgvector", "db"],
-    "image_url": "https://cdn.example.com/nimbus-data.png",
-    "link": "https://nimbus.example.com/vector"
+    "claim": "Free personal plan",
+    "intents": ["notes", "notetaking", "wiki", "workspace", "docs", "task", "project", "organize", "productivity"],
+    "image_url": "https://www.notion.so/front-static/pages/home/logo.png",
+    "link": "https://www.notion.so"
+  },
+  {
+    "id": "sponsor-oura",
+    "sponsor": "Oura Ring",
+    "headline": "Oura Ring Gen 4 — sleep, activity & readiness in one ring",
+    "body": "Track sleep stages, HRV, and recovery. 8-day battery, titanium build, no screen distractions.",
+    "offer_type": "discount",
+    "redeemable": false,
+    "claim": "",
+    "intents": ["sleep", "fitness", "health", "heart rate", "wellness", "tracker", "recovery", "workout", "hrv"],
+    "image_url": "https://ouraring.com/images/home/hero-ring.png",
+    "link": "https://ouraring.com"
+  },
+  {
+    "id": "sponsor-turbotax",
+    "sponsor": "TurboTax",
+    "headline": "File your taxes with TurboTax — up to $20 off",
+    "body": "Guided federal + state filing with audit support. Get your max refund, guaranteed.",
+    "offer_type": "discount",
+    "redeemable": true,
+    "claim": "$20 off, code at checkout",
+    "intents": ["taxes", "tax", "filing", "refund", "w2", "w-2", "deduction", "irs"],
+    "image_url": "https://turbotax.intuit.com/images/logo.png",
+    "link": "https://turbotax.intuit.com"
+  },
+  {
+    "id": "sponsor-headspace",
+    "sponsor": "Headspace",
+    "headline": "Headspace — meditation & sleep, 14-day free trial",
+    "body": "Guided meditations, sleep casts, and focus music. Lower stress and sleep better.",
+    "offer_type": "trial",
+    "redeemable": true,
+    "claim": "14-day free trial",
+    "intents": ["meditation", "stress", "anxiety", "sleep", "relax", "mental health", "focus", "mindfulness"],
+    "image_url": "https://www.headspace.com/_next/image?url=%2Fimages%2Flogo.png",
+    "link": "https://www.headspace.com"
   }
 ]

@@ -53,12 +53,23 @@ def main():
     sup_file = os.path.join(td, "suppliers.json")
     with open(sup_file, "w") as f:
         json.dump(suppliers, f)
+    # Hermetic hosting offer so the sponsored/settle path fires regardless of ads.json.
+    offers = [
+        {"id": "sponsor-host", "sponsor": "Acme Cloud Hosting",
+         "headline": "50% off hosting", "body": "b", "claim": "AGENT50",
+         "intents": ["hosting", "host", "deploy"], "link": "https://acme.example/agent",
+         "active": True, "paused": False, "budget": 5.0, "spent": 0.0},
+    ]
+    offer_file = os.path.join(td, "offers.json")
+    with open(offer_file, "w") as f:
+        json.dump(offers, f)
 
     stub_a = start([PY, "stub.py", "--port", "9001"])
     stub_b = start([PY, "stub.py", "--port", "9002"])
     env = dict(os.environ)
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_GATEWAY_KEY"] = KEY
+    env["ADGATE_OFFERS_FILE"] = offer_file
     gw = subprocess.Popen([PY, "gateway.py", "--port", "9000"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
