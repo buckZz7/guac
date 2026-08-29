@@ -972,9 +972,15 @@ def logout(request: Request):
     return resp
 
 
+@app.get("/", response_class=HTMLResponse)
+def home():
+    """Marketing landing page."""
+    return portal_html.marketing_home()
+
+
 @app.get("/portal", response_class=HTMLResponse)
 def portal_landing():
-    return portal_html.landing()
+    return portal_html.portal_home()
 
 
 @app.post("/portal/user/login", response_class=HTMLResponse)

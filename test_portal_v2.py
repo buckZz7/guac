@@ -25,19 +25,28 @@ for path, frag in (("/terms", "Terms of Service"), ("/privacy", "Privacy Policy"
     assert r.status_code == 200 and frag in r.text, (path, r.status_code)
 print("PASS  /terms and /privacy render")
 
-# 2) landing page has the pitch link + new copy + legal footer
-r = c.get("/portal")
-assert r.status_code == 200 and "Read the advertiser pitch" in r.text
-assert "using agent answers" in r.text
+# 1c) marketing landing at / renders
+r = c.get("/")
+assert r.status_code == 200, r.status_code
+assert "Pay less for AI" in r.text
+assert "Get started free" in r.text
 assert "/terms" in r.text and "/privacy" in r.text
-print("PASS  /portal landing has pitch link + legal footer + demand-gated copy")
+print("PASS  marketing home at / renders (hero + CTAs + footer)")
+
+# 2) portal home has two clear paths + legal footer
+r = c.get("/portal")
+assert r.status_code == 200, r.status_code
+assert "I'm using an AI agent" in r.text
+assert "I'm an advertiser" in r.text
+assert "/terms" in r.text and "/privacy" in r.text
+print("PASS  /portal has user + advertiser paths + legal footer")
 
 # 3) advertiser offer form (dashboard) has image_url/link fields (no intents)
 import portal, portal_html
 adv = portal.get_advertiser("adv@x.com") or portal.create_advertiser("adv@x.com")
 html = portal_html.advertiser_dashboard(adv, portal.offer_stats_for("adv@x.com"))
 for token in ("name=\"image_url\"", "name=\"link\"",
-              "guac sponsorship works"):
+              "Create an offer"):
     assert token in html, f"missing {token} in advertiser form"
 assert "name=\"intents\"" not in html, "intents field should be removed"
 print("PASS  advertiser offer form has image_url/link + pitch link (no intents)")
