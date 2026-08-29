@@ -1,8 +1,10 @@
 """guac portal + marketing HTML UI (server-rendered, no JS framework).
 
-One shared design system (light theme, avocado-green accent) across the
-marketing landing (/), the portal (login, dashboards), and the OAuth flow.
-Clean, mobile-responsive, conversion-focused copy.
+Dark design system: near-black canvas (#0f0f0f), emerald accent (#3ecf8e),
+Inter typeface, border-defined depth (no shadows), pill CTAs. Modeled on
+developer-platform aesthetics (Supabase/Linear). One shared shell across the
+marketing landing (/), the advertiser page (/advertisers), the portal, and
+the OAuth flow. Mobile-responsive.
 """
 import html as _html
 
@@ -10,149 +12,183 @@ import config
 import oauth
 import portal
 
-_ACCENT = "#2f9e6e"
-_ACCENT_DARK = "#237a53"
-_INK = "#0f172a"
-_MUTED = "#64748b"
-_BG = "#f8fafc"
-_CARD = "#ffffff"
-_BORDER = "#e2e8f0"
+# Dark theme tokens
+_BG = "#0f0f0f"          # page canvas
+_SURFACE = "#171717"     # raised surfaces (cards, inputs, code)
+_SURFACE2 = "#1c1c1c"    # slightly raised (table head, hovers)
+_B1 = "#242424"          # subtle borders (section dividers)
+_B2 = "#2e2e2e"          # standard borders (cards, inputs)
+_B3 = "#363636"          # prominent borders (hover, buttons)
+_INK = "#fafafa"         # primary text
+_INK2 = "#b4b4b4"        # secondary text
+_MUTED = "#898989"       # muted text
+_GREEN = "#3ecf8e"       # brand
+_GREEN_LINK = "#00c573"  # interactive green
+_GREEN_BORDER = "rgba(62,207,142,.3)"
 
 # What a user earns per sponsored answer: the impression fee minus guac's cut.
 _SPONSOR_CREDIT = config.IMPRESSION_COST * (1.0 - config.GUAC_AD_FEE_FRACTION)
 
+_MONO = '"Source Code Pro",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+
 
 def _icon(name):
-    """Inline SVG card icons (no emoji, consistent with the design system)."""
+    """Inline SVG card icons — stroked, rendered in the brand green."""
     icons = {
-        "tag": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>",
-        "gift": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 12 20 22 4 22 4 12'/><rect x='2' y='7' width='20' height='5'/><line x1='12' y1='22' x2='12' y2='7'/><path d='M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z'/><path d='M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z'/></svg>",
-        "eye": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/></svg>",
-        "target": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='6'/><circle cx='12' cy='12' r='2'/></svg>",
-        "chart": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round'><line x1='18' y1='20' x2='18' y2='10'/><line x1='12' y1='20' x2='12' y2='4'/><line x1='6' y1='20' x2='6' y2='14'/></svg>",
-        "check": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg>",
+        "tag": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>",
+        "gift": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 12 20 22 4 22 4 12'/><rect x='2' y='7' width='20' height='5'/><line x1='12' y1='22' x2='12' y2='7'/><path d='M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z'/><path d='M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z'/></svg>",
+        "eye": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/></svg>",
+        "target": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='6'/><circle cx='12' cy='12' r='2'/></svg>",
+        "chart": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round'><line x1='18' y1='20' x2='18' y2='10'/><line x1='12' y1='20' x2='12' y2='4'/><line x1='6' y1='20' x2='6' y2='14'/></svg>",
+        "check": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg>",
+        "bolt": "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><polygon points='13 2 3 14 12 14 11 22 21 10 12 10 13 2'/></svg>",
     }
-    return icons.get(name, "") % _ACCENT_DARK
+    return icons.get(name, "") % _GREEN
 
 _CSS = f"""
 *{{box-sizing:border-box;margin:0}}
-body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:{_BG};color:{_INK};line-height:1.6;-webkit-font-smoothing:antialiased}}
-a{{color:{_ACCENT_DARK};text-decoration:none}} a:hover{{text-decoration:underline}}
+html{{scroll-behavior:smooth}}
+body{{font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  background:{_BG};color:{_INK};line-height:1.6;-webkit-font-smoothing:antialiased;
+  font-weight:400}}
+a{{color:{_GREEN_LINK};text-decoration:none}} a:hover{{text-decoration:underline}}
 .container{{max-width:1080px;margin:0 auto;padding:0 24px}}
 /* nav */
-.nav{{background:{_CARD};border-bottom:1px solid {_BORDER};position:sticky;top:0;z-index:10}}
-.nav .inner{{display:flex;align-items:center;gap:24px;padding:14px 24px;max-width:1080px;margin:0 auto}}
-.logo{{font-size:1.35rem;font-weight:800;letter-spacing:-.02em;color:{_INK}}}
-.logo span{{color:{_ACCENT}}}
-.nav .links{{margin-left:auto;display:flex;gap:20px;align-items:center;font-size:.92rem}}
-.nav .links a{{color:{_MUTED}}} .nav .links a:hover{{color:{_INK}}}
-.btn{{display:inline-block;padding:10px 20px;border-radius:8px;font-weight:600;font-size:.95rem;
-  border:0;cursor:pointer;transition:all .12s}}
-.btn-primary{{background:{_ACCENT};color:#fff}} .btn-primary:hover{{background:{_ACCENT_DARK};text-decoration:none}}
-.btn-ghost{{background:transparent;color:{_INK};border:1px solid {_BORDER}}}
-.btn-ghost:hover{{border-color:{_ACCENT};text-decoration:none}}
+.nav{{background:rgba(15,15,15,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid {_B1};position:sticky;top:0;z-index:50}}
+.nav .inner{{display:flex;align-items:center;gap:28px;padding:16px 24px;max-width:1080px;margin:0 auto}}
+.logo{{font-size:1.25rem;font-weight:700;letter-spacing:-.03em;color:{_INK}}}
+.logo span{{color:{_GREEN}}}
+.nav .links{{margin-left:auto;display:flex;gap:24px;align-items:center;font-size:.875rem;
+  flex-wrap:wrap;row-gap:8px}}
+.nav .links a{{color:{_INK2};font-weight:500}} .nav .links a:hover{{color:{_INK};text-decoration:none}}
+/* buttons */
+.btn{{display:inline-block;padding:10px 26px;border-radius:999px;font-weight:500;font-size:.875rem;
+  border:1px solid transparent;cursor:pointer;transition:border-color .15s,background .15s,color .15s}}
+.btn-primary{{background:{_GREEN};color:#0f0f0f;border-color:{_GREEN}}}
+.btn-primary:hover{{background:#4fdb9d;text-decoration:none}}
+.btn-ghost{{background:transparent;color:{_INK};border-color:{_B3}}}
+.btn-ghost:hover{{border-color:{_MUTED};text-decoration:none}}
 .btn-block{{display:block;width:100%;text-align:center}}
 /* hero */
-.hero{{padding:72px 0 56px;text-align:center}}
-.eyebrow{{display:inline-block;background:#e8f5ef;color:{_ACCENT_DARK};font-size:.8rem;font-weight:600;
-  padding:6px 14px;border-radius:999px;margin-bottom:20px;letter-spacing:.02em}}
-h1{{font-size:clamp(2.2rem,5vw,3.4rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;max-width:800px;margin:0 auto}}
-h1 .accent{{color:{_ACCENT}}}
-.lede{{font-size:1.2rem;color:{_MUTED};max-width:620px;margin:20px auto 32px}}
+.hero{{padding:110px 0 72px;text-align:center}}
+.eyebrow{{display:inline-block;font-family:{_MONO};font-size:.72rem;letter-spacing:.14em;
+  text-transform:uppercase;color:{_GREEN};border:1px solid {_GREEN_BORDER};
+  padding:7px 16px;border-radius:999px;margin-bottom:28px}}
+h1{{font-size:clamp(2.6rem,6vw,4.4rem);font-weight:500;letter-spacing:-.04em;line-height:1.05;
+  max-width:860px;margin:0 auto}}
+h1 .accent{{color:{_GREEN}}}
+.lede{{font-size:1.15rem;color:{_INK2};max-width:640px;margin:24px auto 36px;line-height:1.65}}
 .cta{{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}}
-.trust{{margin-top:28px;font-size:.85rem;color:{_MUTED}}}
-.trust b{{color:{_INK}}}
+.trust{{margin-top:30px;font-size:.85rem;color:{_MUTED}}}
+.trust b{{color:{_INK2}}}
 /* live meter strip */
-.meter{{background:{_CARD};border-block:1px solid {_BORDER};padding:18px 0;font-size:.92rem;color:{_MUTED}}}
-.meter b{{color:{_INK};font-size:1.05rem}}
-.meter .note{{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:{_ACCENT_DARK}}}
+.meter{{background:{_SURFACE};border-block:1px solid {_B1};padding:20px 0;font-size:.9rem;color:{_MUTED}}}
+.meter b{{color:{_INK};font-weight:600;font-size:1rem;margin-right:2px}}
+.meter .note{{font-family:{_MONO};font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:{_GREEN}}}
 /* sections */
-section{{padding:64px 0}}
-section.alt{{background:{_CARD};border-block:1px solid {_BORDER}}}
-.sec-head{{text-align:center;max-width:640px;margin:0 auto 40px}}
-h2{{font-size:clamp(1.6rem,3vw,2.2rem);font-weight:800;letter-spacing:-.02em}}
-.sec-head p{{color:{_MUTED};margin-top:12px;font-size:1.05rem}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}}
-.card{{background:{_CARD};border:1px solid {_BORDER};border-radius:14px;padding:28px}}
-.card.plain{{box-shadow:0 1px 3px rgba(0,0,0,.04)}}
-.card .ic{{font-size:1.6rem;margin-bottom:12px}}
-.card h3{{font-size:1.1rem;margin-bottom:8px}}
-.card p{{color:{_MUTED};font-size:.95rem}}
+section{{padding:96px 0}}
+section.tight{{padding:56px 0}}
+.sec-head{{text-align:center;max-width:680px;margin:0 auto 56px}}
+h2{{font-size:clamp(1.7rem,3.4vw,2.4rem);font-weight:500;letter-spacing:-.03em;line-height:1.15}}
+.sec-head p{{color:{_MUTED};margin-top:14px;font-size:1.05rem}}
+.kicker{{font-family:{_MONO};font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:{_GREEN};display:block;margin-bottom:14px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}}
+.card{{background:{_SURFACE};border:1px solid {_B2};border-radius:16px;padding:30px;
+  transition:border-color .15s}}
+.card:hover{{border-color:{_B3}}}
+.card .ic{{margin-bottom:16px;display:block}}
+.card h3{{font-size:1.05rem;font-weight:600;margin-bottom:8px;letter-spacing:-.01em}}
+.card p{{color:{_MUTED};font-size:.94rem}}
 /* steps */
-.steps{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;counter-reset:step}}
-.step{{position:relative;padding:28px;background:{_CARD};border:1px solid {_BORDER};border-radius:14px}}
-.step .num{{font-size:2.2rem;font-weight:800;color:{_ACCENT};opacity:.25;line-height:1}}
-.step h3{{margin:8px 0 6px}}
-.step p{{color:{_MUTED};font-size:.95rem}}
+.steps{{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}}
+.step{{position:relative;padding:30px;background:{_SURFACE};border:1px solid {_B2};border-radius:16px}}
+.step .num{{font-family:{_MONO};font-size:.75rem;color:{_GREEN};letter-spacing:.1em;display:block;margin-bottom:14px}}
+.step h3{{font-size:1.05rem;font-weight:600;margin-bottom:8px}}
+.step p{{color:{_MUTED};font-size:.94rem}}
 /* code / mock */
-.code{{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:24px;font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
-  font-size:.88rem;overflow-x:auto;line-height:1.7}}
-.code .c{{color:#94a3b8}} .code .g{{color:{_ACCENT}}} .code .k{{color:#a5b4fc}}
-.mock{{background:{_CARD};border:1px solid {_BORDER};border-radius:14px;overflow:hidden;max-width:640px;margin:0 auto;text-align:left}}
-.mock .bubble{{padding:18px 22px;border-bottom:1px solid {_BORDER}}}
-.mock .q{{color:{_MUTED}}}.mock .a{{margin-top:8px}}
-.mock .sponsor{{border-top:2px dashed {_BORDER};padding:14px 22px;font-size:.9rem}}
-.mock .sponsor .tag{{display:inline-block;background:#e8f5ef;color:{_ACCENT_DARK};font-weight:600;
-  padding:2px 10px;border-radius:999px;font-size:.75rem;margin-bottom:6px}}
+.code{{background:#0a0a0a;border:1px solid {_B2};color:#e2e8f0;border-radius:12px;padding:24px;
+  font-family:{_MONO};font-size:.86rem;overflow-x:auto;line-height:1.75}}
+.code .c{{color:#6b7280}} .code .g{{color:{_GREEN}}} .code .k{{color:#a5b4fc}}
+.mock{{background:{_SURFACE};border:1px solid {_B2};border-radius:16px;overflow:hidden;
+  max-width:660px;margin:0 auto;text-align:left}}
+.mock .bubble{{padding:22px 26px;border-bottom:1px solid {_B1}}}
+.mock .q{{color:{_MUTED};font-size:.9rem}}.mock .a{{margin-top:10px;color:{_INK2}}}
+.mock .sponsor{{padding:18px 26px;font-size:.9rem;background:#131313}}
+.mock .sponsor .tag{{display:inline-block;border:1px solid {_GREEN_BORDER};color:{_GREEN};
+  font-family:{_MONO};font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;
+  font-weight:500;padding:3px 10px;border-radius:999px;margin-bottom:10px}}
+.mock .sponsor b{{color:{_INK}}}
+.caption{{text-align:center;color:{_MUTED};margin-top:20px;font-size:.88rem}}
 /* two-panel portal home */
-.portal-home{{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:48px 0}}
+.portal-home{{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:56px 0}}
 @media(max-width:720px){{.portal-home{{grid-template-columns:1fr}}}}
-.portal-col{{background:{_CARD};border:1px solid {_BORDER};border-radius:16px;padding:36px}}
-.portal-col h2{{font-size:1.4rem;margin-bottom:10px}}
-.portal-col p{{color:{_MUTED};margin-bottom:20px}}
+.portal-col{{background:{_SURFACE};border:1px solid {_B2};border-radius:16px;padding:36px}}
+.portal-col h2{{font-size:1.3rem;margin-bottom:10px}}
+.portal-col p{{color:{_MUTED};margin-bottom:22px}}
 .oauth-note{{font-size:.85rem;color:{_MUTED};margin-top:14px}}
 /* forms */
-.card form{{display:flex;flex-direction:column;gap:12px;margin-top:8px}}
+form{{display:flex;flex-direction:column;gap:12px}}
+.card form{{margin-top:8px}}
 input[type=email],input[type=number],input[type=text],textarea,select{{
-  width:100%;padding:12px 14px;border:1px solid {_BORDER};border-radius:8px;font-size:.95rem;
-  background:#fff;color:{_INK}}}
-input:focus,textarea:focus,select:focus{{outline:none;border-color:{_ACCENT}}}
-label{{font-weight:600;font-size:.9rem}}
-.flash{{background:#fff8e6;border:1px solid #fde68a;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:.9rem}}
-.error{{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:12px 16px;border-radius:8px;margin:12px 0;font-size:.9rem}}
+  width:100%;padding:12px 14px;border:1px solid {_B2};border-radius:10px;font-size:.95rem;
+  background:{_BG};color:{_INK};font-family:inherit}}
+input:focus,textarea:focus,select:focus{{outline:none;border-color:{_GREEN}}}
+input::placeholder,textarea::placeholder{{color:#555}}
+label{{font-weight:500;font-size:.9rem;color:{_INK2}}}
+.flash{{background:#1f1a0a;border:1px solid #4d3f14;color:#f5d78e;padding:12px 16px;border-radius:10px;margin:12px 0;font-size:.9rem}}
+.error{{background:#2a1215;border:1px solid #4d1f24;color:#fca5a5;padding:12px 16px;border-radius:10px;margin:12px 0;font-size:.9rem}}
 /* dashboards */
-.dash{{max-width:860px;margin:0 auto;padding:40px 24px}}
-.dash h1{{font-size:1.8rem;margin-bottom:4px}}
+.dash{{max-width:860px;margin:0 auto;padding:48px 24px}}
+.dash h1{{font-size:1.8rem;font-weight:600;letter-spacing:-.02em;margin-bottom:4px}}
 .dash .sub{{color:{_MUTED};margin-bottom:28px}}
 .stat-row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px}}
-.stat{{background:{_CARD};border:1px solid {_BORDER};border-radius:12px;padding:20px}}
-.stat .num{{font-size:1.8rem;font-weight:800;color:{_ACCENT_DARK}}}
-.stat .lbl{{font-size:.8rem;color:{_MUTED}}}
-table{{width:100%;border-collapse:collapse;background:{_CARD};border:1px solid {_BORDER};border-radius:12px;overflow:hidden;font-size:.9rem}}
-th,td{{text-align:left;padding:12px 16px;border-bottom:1px solid {_BORDER}}}
-th{{background:#f1f5f9;font-weight:700;color:{_MUTED};font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}}
+.stat{{background:{_SURFACE};border:1px solid {_B2};border-radius:14px;padding:22px}}
+.stat .num{{font-size:1.7rem;font-weight:600;color:{_GREEN};letter-spacing:-.02em}}
+.stat .lbl{{font-size:.78rem;color:{_MUTED};margin-top:2px}}
+table{{width:100%;border-collapse:collapse;background:{_SURFACE};border:1px solid {_B2};border-radius:12px;overflow:hidden;font-size:.9rem}}
+th,td{{text-align:left;padding:12px 16px;border-bottom:1px solid {_B1};color:{_INK2}}}
+th{{background:{_SURFACE2};font-weight:600;color:{_MUTED};font-size:.74rem;text-transform:uppercase;letter-spacing:.06em}}
 tr:last-child td{{border-bottom:0}}
-.code-line{{background:#f1f5f9;padding:10px 14px;border-radius:8px;font-family:monospace;font-size:.9rem;word-break:break-all;margin:6px 0}}
-.badge{{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:600}}
-.badge.active{{background:#dcfce7;color:#166534}}
-.badge.paused{{background:#fee2e2;color:#991b1b}}
-.btn-oauth{{display:block;text-align:center;padding:12px;border:1px solid {_BORDER};border-radius:8px;
-  font-weight:600;color:{_INK};margin:6px 0}}
-.btn-oauth:hover{{border-color:{_ACCENT};text-decoration:none}}
+.code-line{{background:#0a0a0a;border:1px solid {_B2};padding:10px 14px;border-radius:8px;
+  font-family:{_MONO};font-size:.85rem;color:#e2e8f0;word-break:break-all;margin:6px 0}}
+.badge{{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:600}}
+.badge.active{{background:rgba(62,207,142,.12);color:{_GREEN}}}
+.badge.paused{{background:rgba(248,113,113,.12);color:#f87171}}
+.btn-oauth{{display:block;text-align:center;padding:12px;border:1px solid {_B2};border-radius:10px;
+  font-weight:500;color:{_INK};margin:6px 0;background:{_SURFACE}}}
+.btn-oauth:hover{{border-color:{_B3};text-decoration:none}}
 /* footer */
-footer{{background:{_CARD};border-top:1px solid {_BORDER};padding:40px 24px;margin-top:0}}
-footer .inner{{max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:.9rem;color:{_MUTED}}}
-footer .links{{margin-left:auto;display:flex;gap:20px}}
+footer{{background:{_BG};border-top:1px solid {_B1};padding:44px 24px}}
+footer .inner{{max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  font-size:.86rem;color:{_MUTED}}}
+footer .links{{margin-left:auto;display:flex;gap:22px}}
+footer .links a{{color:{_MUTED}}} footer .links a:hover{{color:{_INK2}}}
 /* faq */
 .faq{{max-width:720px;margin:0 auto}}
-.faq details{{background:{_CARD};border:1px solid {_BORDER};border-radius:10px;padding:16px 20px;margin-bottom:10px}}
-.faq summary{{font-weight:600;cursor:pointer}}
-.faq p{{color:{_MUTED};margin-top:8px;font-size:.95rem}}
+.faq details{{background:{_SURFACE};border:1px solid {_B2};border-radius:12px;padding:18px 22px;margin-bottom:10px}}
+.faq summary{{font-weight:500;cursor:pointer;color:{_INK};font-size:.98rem}}
+.faq p{{color:{_MUTED};margin-top:10px;font-size:.94rem}}
 /* doc pages */
 .doc-page{{max-width:760px}}
 .doc-page .back{{display:inline-block;margin-bottom:16px;color:{_MUTED}}}
-.doc-page h1{{font-size:1.9rem;margin-bottom:8px}}
-.doc-page h2{{font-size:1.35rem;margin:28px 0 8px}}
-.doc-page h3{{font-size:1.1rem;margin:20px 0 6px}}
-.doc-page p{{color:#334155;margin:10px 0}}
-.doc-page ul,.doc-page ol{{margin:10px 0 10px 24px;color:#334155}}
+.doc-page h1{{font-size:1.9rem;font-weight:600;margin-bottom:8px}}
+.doc-page h2{{font-size:1.35rem;font-weight:600;margin:28px 0 8px}}
+.doc-page h3{{font-size:1.1rem;font-weight:600;margin:20px 0 6px}}
+.doc-page p{{color:{_INK2};margin:10px 0}}
+.doc-page ul,.doc-page ol{{margin:10px 0 10px 24px;color:{_INK2}}}
 .doc-page li{{margin:4px 0}}
-.doc-page code{{background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:.9em;color:#0f172a}}
-.doc-page hr{{border:0;border-top:1px solid {_BORDER};margin:24px 0}}
-.doc-page .doc-code{{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:16px;
-  overflow-x:auto;font-family:monospace;font-size:.85rem;margin:12px 0}}
-.doc-page blockquote{{border-left:3px solid {_ACCENT};padding:6px 16px;margin:12px 0;color:{_MUTED}}}
+.doc-page code{{background:{_SURFACE};border:1px solid {_B1};padding:2px 6px;border-radius:5px;font-size:.88em;color:{_INK}}}
+.doc-page hr{{border:0;border-top:1px solid {_B1};margin:24px 0}}
+.doc-page .doc-code{{background:#0a0a0a;border:1px solid {_B2};color:#e2e8f0;border-radius:10px;padding:16px;
+  overflow-x:auto;font-family:{_MONO};font-size:.84rem;margin:12px 0}}
+.doc-page blockquote{{border-left:2px solid {_GREEN};padding:6px 16px;margin:12px 0;color:{_MUTED}}}
+/* advertiser banner strip (user page) */
+.adv-strip{{background:{_SURFACE};border:1px solid {_B2};border-radius:16px;padding:28px 32px;
+  display:flex;align-items:center;gap:20px;flex-wrap:wrap}}
+.adv-strip p{{color:{_MUTED};font-size:.95rem;flex:1;min-width:240px}}
+.adv-strip b{{color:{_INK}}}
 """
 
 
@@ -160,9 +196,9 @@ def _page(title, body, nav_links=()):
     nav = "".join(f'<a href="{_html.escape(h)}">{_html.escape(t)}</a>' for t, h in nav_links)
     favicon = ("data:image/svg+xml," +
                "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E"
-               "%3Ccircle cx='50' cy='50' r='46' fill='%232f9e6e'/%3E"
-               "%3Ctext x='50' y='66' font-size='52' font-family='Arial' font-weight='bold' "
-               "text-anchor='middle' fill='white'%3Eg%3C/text%3E%3C/svg%3E")
+               "%3Ccircle cx='50' cy='50' r='46' fill='%233ecf8e'/%3E"
+               "%3Ctext x='50' y='66' font-size='52' font-family='Inter,Arial' font-weight='bold' "
+               "text-anchor='middle' fill='%230f0f0f'%3Eg%3C/text%3E%3C/svg%3E")
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -171,6 +207,9 @@ def _page(title, body, nav_links=()):
 <meta property="og:description" content="The ad-subsidized AI gateway. Real wholesale rates, sponsor credits drawn first, no ads in the model.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://addguac.fly.dev/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="{favicon}">
 <title>{_html.escape(title)} · guac</title><style>{_CSS}</style></head>
 <body>
@@ -184,152 +223,218 @@ def _page(title, body, nav_links=()):
 <footer><div class="inner">
   <div>guac — the ad-subsidized inference gateway. Wholesale rates, sponsor credits, no ads in the model.</div>
   <div class="links">
-    <a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/pitch">For advertisers</a><a href="https://github.com/buckZz7/guac">GitHub</a>
+    <a href="/advertisers">Advertisers</a><a href="/pitch">Pitch</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="https://github.com/buckZz7/guac">GitHub</a>
   </div>
 </div></footer>
 </body></html>"""
 
 
 def marketing_home(stats=None):
-    """The marketing landing page served at /. `stats` optionally carries live
-    ledger numbers {"requests", "impressions", "subsidized_usd"} for the
-    public meter — omitted when the gateway has nothing to show yet."""
+    """The marketing landing page served at /. 100% user-focused: what YOU get.
+    Advertisers get their own page at /advertisers. `stats` optionally carries
+    live ledger numbers for the public meter."""
     meter = ""
     if stats and stats.get("requests", 0) > 0:
         meter = f"""
-<div class="meter"><div class="container" style="display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:center">
+<div class="meter"><div class="container" style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center;align-items:center">
   <span><b>{stats['requests']:,}</b> requests served</span>
   <span><b>{stats['impressions']:,}</b> sponsorships delivered</span>
-  <span><b>${stats['subsidized_usd']:.2f}</b> in ad money returned to users</span>
+  <span><b>${stats['subsidized_usd']:.2f}</b> ad money returned to users</span>
   <span class="note">live from the guac ledger</span>
 </div></div>"""
     body = f"""
 <div class="hero">
-  <span class="eyebrow">The ad-subsidized inference gateway</span>
-  <h1>Pay wholesale for AI.<br>Sponsors cover part of the bill.</h1>
-  <p class="lede">Point any OpenAI-compatible agent at one URL. You pay the real
-  wholesale cost of your tokens — and when your answer carries a disclosed sponsor,
-  that advertiser's money is credited straight onto your balance and spent first.
-  That's the discount: visible, metered, and never inside the model.</p>
+  <span class="eyebrow">Inference, sponsored</span>
+  <h1>Cheaper tokens.<br><span class="accent">Sponsors pay the difference.</span></h1>
+  <p class="lede">Point your agent at one URL. You pay the real wholesale price of your
+  tokens — and when an answer carries a disclosed sponsor, that money lands on your
+  balance and is spent before yours. Your model output is never touched.</p>
   <div class="cta">
-    <a class="btn btn-primary" href="/portal">Get started</a>
-    <a class="btn btn-ghost" href="#pricing">See pricing</a>
+    <a class="btn btn-primary" href="/portal">Get my API key</a>
+    <a class="btn btn-ghost" href="#how">How it works</a>
   </div>
-  <p class="trust">Never inside the model · Real wholesale rates · <b>Metered publicly</b></p>
+  <p class="trust">Any OpenAI-compatible agent · Frontier models pass-through · <b>Ads never enter the model</b></p>
 </div>
 {meter}
 
-<section id="how">
+<section id="how" style="padding-top:80px">
   <div class="container">
-    <div class="sec-head"><h2>How it works</h2>
-      <p>Three steps. No client changes, no config drama.</p></div>
+    <div class="sec-head"><span class="kicker">How it works</span>
+      <h2>Three steps. Zero config drama.</h2></div>
     <div class="steps">
-      <div class="step"><div class="num">1</div><h3>Top up and connect</h3>
-        <p>Get an API key + base URL. Point Hermes, Codex, OpenClaw, or any OpenAI-compatible client at it.</p></div>
-      <div class="step"><div class="num">2</div><h3>Every request is billed at cost</h3>
-        <p>You pay the wholesale price of the tokens you used — nothing above it. Ask for any model by name and it's forwarded to the provider unchanged.</p></div>
-      <div class="step"><div class="num">3</div><h3>Sponsors shrink your bill</h3>
-        <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That advertiser money lands on your balance and is spent before yours.</p></div>
+      <div class="step"><span class="num">01</span><h3>Top up &amp; connect</h3>
+        <p>Get an API key and base URL. Point Hermes, Codex, OpenClaw — any OpenAI-compatible client — at it.</p></div>
+      <div class="step"><span class="num">02</span><h3>Billed at cost</h3>
+        <p>Every request charges the provider's actual wholesale price. No markup, no subscription, no surprises.</p></div>
+      <div class="step"><span class="num">03</span><h3>Sponsors shrink your bill</h3>
+        <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That money credits your balance and is drawn first.</p></div>
     </div>
   </div>
 </section>
 
-<section class="alt">
+<section style="padding-top:0">
   <div class="container">
-    <div class="sec-head"><h2>What it looks like</h2>
-      <p>Your answer, untouched. A clearly-labeled sponsor below it.</p></div>
+    <div class="sec-head"><span class="kicker">The exchange</span>
+      <h2>Your answer, untouched. The sponsor below it pays you back.</h2></div>
     <div class="mock">
       <div class="bubble"><div class="q">You: Which VPN should I get?</div>
-        <div class="a">The best pick depends on your needs — streaming, privacy, or speed. Here are my top recommendations...</div></div>
+        <div class="a">The best pick depends on your needs — streaming, privacy, or speed. Here are my top recommendations…</div></div>
       <div class="sponsor">
         <span class="tag">Sponsor</span><br>
         <b>Acme VPN</b> — 50% off your first year<br>
         <a href="/pitch">Learn more</a>
       </div>
     </div>
-    <p style="text-align:center;color:#64748b;margin-top:20px;font-size:.9rem">Everything above the line is byte-identical to the model's output. The footer is the ad — and it pays you back.</p>
+    <p class="caption">Everything above the line is byte-identical to the model's output. The footer is the ad — and it credits ~${'{:.2f}'.format(_SPONSOR_CREDIT)} to you.</p>
   </div>
 </section>
 
-<section id="pricing">
+<section id="pricing" style="padding-top:0">
   <div class="container">
-    <div class="sec-head"><h2>Pricing</h2>
-      <p>No markup, no subscription. You pay what the model costs, and sponsors lower it.</p></div>
+    <div class="sec-head"><span class="kicker">Pricing</span>
+      <h2>You pay what the model costs. Sponsors pay you back.</h2></div>
     <div class="grid">
-      <div class="card"><div class="ic">{_icon('tag')}</div><h3>Wholesale + nothing</h3>
-        <p>Your bill is the provider's actual cost for your tokens, metered per request. OpenRouter models report their real cost; fixed pools use published $/M rates.</p></div>
-      <div class="card"><div class="ic">{_icon('gift')}</div><h3>Sponsors pay you back</h3>
-        <p>Each sponsored answer credits ~${'{:.2f}'.format(_SPONSOR_CREDIT)} onto your balance — drawn before your own money. More sponsors, cheaper tokens.</p></div>
-      <div class="card"><div class="ic">{_icon('eye')}</div><h3>See every cent</h3>
-        <p>Your dashboard shows your balance, your sponsor credit, and what each request cost. The settlement ledger is operator-visible end to end.</p></div>
+      <div class="card"><span class="ic">{_icon('tag')}</span><h3>Wholesale + nothing</h3>
+        <p>Your bill is the provider's actual token cost, metered per request. OpenRouter reports real cost; fixed pools use published $/M rates.</p></div>
+      <div class="card"><span class="ic">{_icon('gift')}</span><h3>Sponsor credit, spent first</h3>
+        <p>Each sponsored answer puts ~${'{:.2f}'.format(_SPONSOR_CREDIT)} on your balance. At billing time it's drawn before your own money — the discount is real cash, not a coupon.</p></div>
+      <div class="card"><span class="ic">{_icon('eye')}</span><h3>Every cent visible</h3>
+        <p>Your dashboard shows your balance, your sponsor credit, and each request's cost. The ledger is append-only and auditable.</p></div>
     </div>
   </div>
 </section>
 
-<section class="alt" id="models">
+<section id="models" style="padding-top:0">
   <div class="container">
-    <div class="sec-head"><h2>Models</h2>
-      <p>Ask for a model, get that model.</p></div>
+    <div class="sec-head"><span class="kicker">Models</span>
+      <h2>Ask for a model. Get that model.</h2></div>
     <div class="grid">
       <div class="card"><h3>Frontier, pass-through</h3>
-        <p>Request any model slug — GPT, Claude, Gemini, Llama — and it's forwarded to the provider unchanged, billed at the real wholesale cost.</p></div>
+        <p>GPT, Claude, Gemini, Llama — request any slug and it's forwarded unchanged, billed at the real wholesale cost.</p></div>
       <div class="card"><h3>Quality-gated open pools</h3>
-        <p>Cheap open-model suppliers sit behind a measured quality gate: latency + success rate. A degrading source is dropped until it recovers.</p></div>
+        <p>Cheap open-model suppliers sit behind a measured quality gate: success rate + latency. Degrading sources are dropped until they recover.</p></div>
       <div class="card"><h3>No silent substitution</h3>
-        <p>If you ask for a specific model, you get it. Generic routing is only used when you ask for "guac".</p></div>
+        <p>Name a model and you get it. Generic routing only happens when you ask for "guac".</p></div>
     </div>
   </div>
 </section>
 
-<section id="code">
+<section style="padding-top:0">
   <div class="container">
-    <div class="sec-head"><h2>Get a key</h2>
-      <p>Sign up, top up, point your agent at it.</p></div>
+    <div class="sec-head"><span class="kicker">Setup</span>
+      <h2>Connected in one minute</h2></div>
     <div class="code"><span class="c"># Hermes</span>
 <span class="g">$</span> hermes config set model.provider custom
 <span class="g">$</span> hermes config set model.base_url https://addguac.fly.dev/v1
 <span class="g">$</span> hermes config set model.api_key guac_&lt;your-key&gt;
 
 <span class="c"># or any OpenAI-compatible client</span>
-<span class="g">$</span> curl https://addguac.fly.dev/v1/chat/completions \\
-  -H "Authorization: Bearer guac_&lt;your-key&gt;" \\
+<span class="g">$</span> curl https://addguac.fly.dev/v1/chat/completions \
+  -H "Authorization: Bearer guac_&lt;your-key&gt;" \
   -d '{{"model":"anthropic/claude-sonnet-4","messages":[{{"role":"user","content":"hello"}}]}}'</div>
   </div>
 </section>
 
-<section class="alt">
+<section style="padding-top:0">
   <div class="container">
-    <div class="sec-head"><h2>For advertisers</h2>
-      <p>Put your offer in front of people actually using AI agents — with honest, metered results.</p></div>
-    <div class="grid">
-      <div class="card"><div class="ic">{_icon('target')}</div><h3>Reach active AI users</h3>
-        <p>Your offer appears as a disclosed sponsor below real agent answers — genuine attention, not a banner.</p></div>
-      <div class="card"><div class="ic">{_icon('chart')}</div><h3>Pay for what delivers</h3>
-        <p>${'{:.2f}'.format(config.IMPRESSION_COST)} per delivered impression. Set a budget; your offer runs while it's funded and pauses when spent.</p></div>
-      <div class="card"><div class="ic">{_icon('check')}</div><h3>Real clicks, real proof</h3>
-        <p>Impressions and clicks are metered from the ledger. You see exactly what your budget bought.</p></div>
-    </div>
-    <div class="cta" style="margin-top:32px"><a class="btn btn-primary" href="/pitch">Read the advertiser pitch</a></div>
-  </div>
-</section>
-
-<section>
-  <div class="container">
-    <div class="sec-head"><h2>FAQ</h2></div>
+    <div class="sec-head"><span class="kicker">FAQ</span><h2>Questions</h2></div>
     <div class="faq">
-      <details><summary>Does guac put ads inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked "Sponsor".</p></details>
-      <details><summary>How does the discount actually work?</summary><p>When an answer carries a sponsor, that advertiser's impression fee is credited onto your balance (minus guac's cut). At billing time your sponsor credit is spent before your own money — so advertiser money literally covers tokens you'd otherwise pay for.</p></details>
-      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The wholesale cost of your tokens — the provider's real price, metered per request. guac adds no markup.</p></details>
-      <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through, plus quality-gated open-model pools. Ask for a specific model and it's forwarded unchanged.</p></details>
-      <details><summary>Which agents work with guac?</summary><p>Any OpenAI-compatible client — Hermes, Codex, OpenClaw, Aider, or a plain script. If it accepts a base_url and API key, it works.</p></details>
+      <details><summary>Do ads go inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked "Sponsor".</p></details>
+      <details><summary>How does the discount actually work?</summary><p>When an answer carries a sponsor, that advertiser's impression fee is credited onto your balance (minus guac's cut). At billing time your sponsor credit is spent before your own money — advertiser money literally covers tokens you'd otherwise pay for.</p></details>
+      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The wholesale cost of your tokens — the provider's real price, metered per request. No markup.</p></details>
+      <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through, plus quality-gated open-model pools.</p></details>
+      <details><summary>Which agents work with guac?</summary><p>Anything OpenAI-compatible: Hermes, Codex, OpenClaw, Aider, or a plain script. If it takes a base_url and an API key, it works.</p></details>
       <details><summary>Will I see ads all the time?</summary><p>No — a few a day at most, and only when an advertiser has funded inventory. No funded sponsor, no footer.</p></details>
     </div>
   </div>
 </section>
+
+<section class="tight" style="padding-top:0">
+  <div class="container">
+    <div class="adv-strip">
+      <p><b>Running ads?</b> Put your offer below real agent answers — disclosed, budget-capped, metered from the ledger.</p>
+      <a class="btn btn-ghost" href="/advertisers">For advertisers &rarr;</a>
+    </div>
+  </div>
+</section>
 """
-    return _page("Pay wholesale for AI", body,
+    return _page("Cheaper tokens, sponsored", body,
                  nav_links=(("How it works", "#how"), ("Pricing", "#pricing"),
-                            ("For advertisers", "/pitch")))
+                            ("Models", "#models")))
+
+
+def advertiser_home():
+    """Dedicated advertiser page — the marketing surface for the demand side."""
+    body = f"""
+<div class="hero" style="padding:88px 0 56px">
+  <span class="eyebrow">For advertisers</span>
+  <h1>Where AI agents<br><span class="accent">actually read.</span></h1>
+  <p class="lede">Your offer appears as a disclosed sponsor below real agent answers —
+  at the moment the human is reading a result they asked for. No banners, no feed,
+  no bots. Budget-capped and metered from the ledger.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="/auth/login?role=advertiser">Open the ad manager</a>
+    <a class="btn btn-ghost" href="/pitch">Read the pitch</a>
+  </div>
+</div>
+
+<section style="padding-top:24px">
+  <div class="container">
+    <div class="grid">
+      <div class="card"><span class="ic">{_icon('target')}</span><h3>Genuine attention</h3>
+        <p>Placements sit under answers the user just requested — a moment of real focus, not a scroll-past.</p></div>
+      <div class="card"><span class="ic">{_icon('chart')}</span><h3>Budget is the demand</h3>
+        <p>${'{:.2f}'.format(config.IMPRESSION_COST)} per delivered impression. Your offer runs while it's funded and auto-pauses when spent. No auctions.</p></div>
+      <div class="card"><span class="ic">{_icon('check')}</span><h3>Metered, not claimed</h3>
+        <p>Impressions and clicks come straight from the ledger. You see the funnel: delivered, clicked, redeemed.</p></div>
+      <div class="card"><span class="ic">{_icon('bolt')}</span><h3>One form, live in minutes</h3>
+        <p>Headline, body, budget, link. Top up a balance, publish, and the gateway starts serving.</p></div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="container">
+    <div class="sec-head"><span class="kicker">What the user sees</span>
+      <h2>A disclosed sponsor. Nothing more.</h2></div>
+    <div class="mock">
+      <div class="bubble"><div class="q">Agent: Here are three options for managed hosting, each with tradeoffs…</div></div>
+      <div class="sponsor">
+        <span class="tag">Sponsor</span><br>
+        <b>Acme Cloud Hosting</b> — 50% off your first 3 months<br>
+        Claim code AGENT50 · <a href="/pitch">Learn more</a>
+      </div>
+    </div>
+    <p class="caption">The answer above the line is never touched. That separation is the product — and why users trust it.</p>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="container">
+    <div class="sec-head"><span class="kicker">How billing works</span><h2>Prepaid balance, per impression</h2></div>
+    <div class="steps">
+      <div class="step"><span class="num">01</span><h3>Top up</h3>
+        <p>Prepaid balance in USD. You can't run ads you haven't funded — that's the whole system's honesty.</p></div>
+      <div class="step"><span class="num">02</span><h3>Publish an offer</h3>
+        <p>Set a budget (max spend). Each delivered impression debits ${'{:.2f}'.format(config.IMPRESSION_COST)}.</p></div>
+      <div class="step"><span class="num">03</span><h3>Watch the funnel</h3>
+        <p>Impressions, clicks, redemptions — per offer, from the ledger. Budget spent = auto-pause.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="tight" style="padding-top:0">
+  <div class="container">
+    <div class="adv-strip">
+      <p><b>Ready to run?</b> Sign in, top up, and your first offer can be live today.</p>
+      <a class="btn btn-primary" href="/auth/login?role=advertiser">Open the ad manager</a>
+    </div>
+  </div>
+</section>
+"""
+    return _page("For advertisers", body,
+                 nav_links=(("Ad manager", "/auth/login?role=advertiser"),
+                            ("Pitch", "/pitch")))
 
 
 def portal_home():

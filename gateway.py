@@ -889,6 +889,12 @@ async def backup_endpoint(request: Request):
     return backup.build_bundle()
 
 
+@app.get("/advertisers", response_class=HTMLResponse)
+def advertisers():
+    """Dedicated advertiser marketing page (the user-facing side lives at /)."""
+    return portal_html.advertiser_home()
+
+
 @app.get("/pitch")
 def pitch():
     """The advertiser pitch, served as a styled page."""

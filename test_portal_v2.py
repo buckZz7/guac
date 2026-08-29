@@ -26,13 +26,18 @@ for path, frag in (("/terms", "Terms of Service"), ("/privacy", "Privacy Policy"
     assert r.status_code == 200 and frag in r.text, (path, r.status_code)
 print("PASS  /terms and /privacy render")
 
-# 1c) marketing landing at / renders
+# 1c) marketing landing at / renders (user-only page; advertisers have /advertisers)
 r = c.get("/")
 assert r.status_code == 200, r.status_code
-assert "Pay wholesale for AI" in r.text
-assert "Get started" in r.text
+assert "Cheaper tokens" in r.text
+assert "Get my API key" in r.text
 assert "/terms" in r.text and "/privacy" in r.text
 print("PASS  marketing home at / renders (hero + CTAs + footer)")
+
+# 1c-2) advertiser page renders separately
+r = c.get("/advertisers")
+assert r.status_code == 200 and "For advertisers" in r.text, r.status_code
+print("PASS  /advertisers renders the advertiser marketing page")
 
 # 1d) custom 404 renders (not a 500)
 r = c.get("/does-not-exist-xyz")
