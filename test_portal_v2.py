@@ -19,11 +19,18 @@ assert r.status_code == 200, r.status_code
 assert ("moment of need" in r.text) or ("demand-gated sponsorship" in r.text)
 print("PASS  /pitch renders the advertiser pitch (or fallback)")
 
-# 2) landing page has the pitch link + new copy
+# 1b) /terms and /privacy render
+for path, frag in (("/terms", "Terms of Service"), ("/privacy", "Privacy Policy")):
+    r = c.get(path)
+    assert r.status_code == 200 and frag in r.text, (path, r.status_code)
+print("PASS  /terms and /privacy render")
+
+# 2) landing page has the pitch link + new copy + legal footer
 r = c.get("/portal")
 assert r.status_code == 200 and "Read the advertiser pitch" in r.text
 assert "using agent answers" in r.text
-print("PASS  /portal landing has pitch link + demand-gated copy")
+assert "/terms" in r.text and "/privacy" in r.text
+print("PASS  /portal landing has pitch link + legal footer + demand-gated copy")
 
 # 3) advertiser offer form (dashboard) has image_url/link fields (no intents)
 import portal, portal_html

@@ -73,6 +73,10 @@ def landing():
         <p class="meta"><a href="/pitch">Read the advertiser pitch</a></p>
       </div>
     </div>
+    <p class="meta" style="margin-top:2.5rem;border-top:1px solid #e3e3e3;padding-top:1rem">
+      <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> ·
+      <a href="/pitch">For advertisers</a>
+    </p>
     """
     return _page("guac", body)
 

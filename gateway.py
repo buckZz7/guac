@@ -697,16 +697,29 @@ async def backup_endpoint(request: Request):
 @app.get("/pitch")
 def pitch():
     """The advertiser pitch, served as readable HTML for the portal."""
-    path = config.BASE / "docs" / "ADVERTISER_PITCH.md"
+    return _serve_doc("ADVERTISER_PITCH.md", "guac — advertiser pitch")
+
+
+@app.get("/terms")
+def terms():
+    """Terms of Service."""
+    return _serve_doc("TERMS.md", "guac — Terms of Service")
+
+
+@app.get("/privacy")
+def privacy():
+    """Privacy Policy."""
+    return _serve_doc("PRIVACY.md", "guac — Privacy Policy")
+
+
+def _serve_doc(filename: str, fallback_title: str):
+    path = config.BASE / "docs" / filename
     text = path.read_text() if path.exists() else None
     if not text:
         return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
                             "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
                             "color:#e6e8ee;background:#0b0e14;'>"
-                            "guac — demand-gated sponsorship.\n\n"
-                            "A disclosed Sponsor: footer appears below final agent answers — "
-                            "up to a few a day, only when an advertiser has funded budget. "
-                            "See the README for the full advertiser pitch.</pre>")
+                            f"{fallback_title} — content not found.</pre>")
     return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
                         "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
                         "color:#e6e8ee;background:#0b0e14;'>"
