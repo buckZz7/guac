@@ -119,12 +119,14 @@ user policy  ──▶  guac ──▶ [agent context] ──▶ model (decides)
 
 ## Billing model (agent-native)
 
-Rework of v1's per-impression model for the agent tier:
+v1 billing (as shipped): users prepay and every request bills
+`market price × (1 − per-model discount)`; advertiser impressions fund the
+discount gap. The agent tier reworks the ADVERTISER side:
 
 ```
 advertiser_pays = acts × cost_per_act        (only confirmed actions)
-user_saves     = ad_pass_through             (same transparent split as v1)
-guac_fee       = acts × fee_per_act          (thin, honest)
+user_saves      = the discount in their rate  (same model as v1)
+guac_fee        = acts × fee_per_act          (thin, honest)
 ```
 
 An "act" is a confirmed, attributed outcome (redeemed offer / completed

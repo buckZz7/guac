@@ -1,199 +1,64 @@
 # guac
 
-OpenAI-compatible gateway that sits between an agent and its inference provider.
-V1 is **demand-gated sponsorship**: after a final agent answer, guac periodically
-appends a disclosed **`Sponsor:` footer** — up to a daily cap, only when there's
-funded advertiser demand. It's for the human to see, never fed into the model.
-It routes through a quality-gated pool of cheap suppliers (with failover), meters
-the exact tokens, and applies a transparent, advertiser-funded discount to the
-user's per-token cost.
+OpenAI-compatible inference gateway with a **flat, per-model discount funded
+by disclosed advertising**.
 
-The cadence is simple: **final answer + funded demand + under the daily cap →
-append a sponsor.** No topic-matching, no decision-point heuristics. If no
-advertiser has budget, no ads appear at all — the system is honest about
-inventory.
-
-The user's discount is a lower price, not a credit. No wallets, no balances.
+Users prepay a balance and pay **below market rate on every request** — the
+discount is set per model (quality-gated open pools carry the biggest cuts;
+frontier pass-through rides at market until ad revenue covers it). A few
+answers a day carry a disclosed `Sponsor:` footer below them; that advertiser
+revenue is what funds the gap. The model output itself is never touched.
 
 ```
-[agent] --base_url=guac--> [gateway] --quality-gated pool--> [suppliers]
-   (Hermes/OpenClaw/Codex)     /|\                           (SN64/SN53/SN28/retail)
-        user pays discounted rate <---|  advertiser money lowers it
-   human sees "Sponsor: <sponsor>" below some answers, after a --- line (never the model)
+[user agent] --base_url=guac--> [gateway] --quality-gated pool--> [suppliers]
+   any OpenAI client              |   |                           (Chutes/Engy/OpenRouter)
+   pays discounted rate <---------+   |
+                                      +--> disclosed "Sponsor:" footer below
+                                           a few final answers (never in-model)
 ```
 
-## v1 design choice
+## The model, in one line
 
-The v1 sponsorship is **human-facing**, not agent-native. The gateway never
-injects anything into the model's context (costs no tokens, never influences
-inference). The disclosed footer is appended BELOW the answer, delimited by
-`---`, so everything above the line is byte-identical to the model output.
+**Advertiser money lowers the user's token price — baked into the rate, not
+credited back.** No rebates, no coupons, no credit mechanics to understand.
 
-The ad fires when **all three** hold, deterministically:
-1. **Final answer** — `finish_reason == "stop"` (mid-loop `tool_calls` turns never qualify; this is what removes the narration noise)
-2. **Funded demand** — at least one active offer has budget remaining (static offers count as standing funded inventory)
-3. **Under the daily cap** — user hasn't hit `ADS_PER_DAY` (default 3) today
+- Every request bills `market price × (1 − model discount)` against the
+  user's prepaid balance.
+- Discount resolution: `config.MODEL_DISCOUNTS[model]` > supplier `discount`
+  field (suppliers.json) > global `ADGATE_DISCOUNT_RATE` (default 0.30).
+- Empty balance → HTTP 402 `insufficient_balance`.
+- Ads are demand-gated: a footer appears only on final answers
+  (`finish_reason == "stop"`), under a daily cap, when a funded offer exists.
+  No funded advertiser → no ads at all.
 
-Offers rotate deterministically so a user sees different sponsors across the day.
-The later agent-native "hard buyer" version can be layered on without changing
-the economics.
+## What's here
 
-## Model
+- `gateway.py` — FastAPI app: routing, billing, sponsorship, portal routes
+- `payments.py` — money ledger (user top-ups, advertiser balances, billing)
+- `settlement.py` — ledger-driven lifetime statement (`/settle`, master key)
+- `suppliers.py` — quality-gated supplier pool with failover + recovery
+- `portal.py` / `portal_html.py` — accounts, ad manager, dark-themed site
+- `oauth.py` — GitHub + Google sign-in (magic-link fallback)
+- `config.py` — all knobs, env-driven (`ADGATE_*`)
+- `docs/` — DESIGN, DEPLOY, advertiser pitch, positioning, agent tier, ToS, privacy
 
-The settlement is fully transparent — the split is always public:
-
-```
-retail_cost     = tokens × retail $/M
-wholesale_cost  = tokens × wholesale $/M      (what guac pays the source)
-ad_revenue      = offers × $/offer             (what sponsors paid)
-guac_fee        = offers × fee                 (guac's whole margin)
-
-user_paid   = max(0, wholesale_cost − (ad_revenue − guac_fee))
-user_saving = retail_cost − user_paid          (cheap-supply + ad money)
-guac_margin = guac_fee                          (thin, honest, by design)
-```
-
-Guac keeps only its fee. The cheap-supply savings and the ad money both go to the
-user. Full rationale in [DESIGN.md](DESIGN.md).
-
-## Components
-
-| File | Purpose |
-|------|---------|
-| `gateway.py` | OpenAI-compatible proxy: sponsorship, metering, routing, dashboard, attribution, portal routes |
-| `suppliers.py` | Quality-gated supplier pool with deterministic scoring + failover + recovery |
-| `settlement.py` | Monthly statement from the ledger (Model B economics) |
-| `portal.py` | Self-serve sign-up (users) + advertiser accounts/offers + per-impression billing + magic-link auth |
-| `portal_html.py` | Server-rendered HTML UI for the portal (user + advertiser consoles) |
-| `daily.py` | Retired — the old timer-based companion (wrong slot; superseded by decision-point footers) |
-| `config.py` | Env-driven configuration |
-| `ads.json` | Sponsor offers (fallback) |
-| `suppliers.json` | Inference sources (Chutes SN64, engy SN53, OpenRouter; keys via env) |
-| `stub.py` | OpenAI-compatible stub upstream for tests |
-| `test_*.py` | Test suites |
-
-## Portal (self-serve, live at /portal)
-
-**Users sign up** — get an API key + base_url:
-```
-POST /signup    {"email": "..."}
-                -> {"api_key": "guac_...", "base_url": "https://<host>/v1"}
-```
-Or use the web UI (`/portal`) — magic-link login, re-view your key.
-
-**Advertisers** — magic-link login, no passwords:
-- **Ad manager UI** (`/portal`): create offers, set budgets, pause/resume, see live impressions/spend
-- **Per-impression billing**: each delivered sponsorship costs one impression; an offer auto-pauses when its budget is spent
-- **API** (advertiser's own token, not the master key):
-```
-POST /advertiser/offer   {"headline","body","claim","budget","offer_type",
-                          "intents":["hosting"],"image_url":"...","link":"..."}
-GET  /advertiser/stats   -> offers scoped to that advertiser
-```
-`intents` (topic keywords) gate when the offer can appear at a decision point;
-`image_url`/`link` render in the footer.
-
-## Daily delivery (retired)
-
-`daily.py` was the old timer-based companion — it fired once a day on a schedule,
-which is the wrong slot. It's superseded by the decision-point footer: an ad now
-appears only at a real decision moment, delivered inline with the answer it
-belongs to. `daily.py` is kept for reference but is no longer the recommended
-surface (and fires no cron).
-
-## Deploy (hosted service)
-
-guac is built to run as a hosted service. The Dockerfile + fly.toml deploy it to
-[Fly.io](https://fly.io) — a cheap, per-second-billed Linux VM that gives a
-public HTTPS URL. Idle cost ≈ $0. **You can do the whole deploy in the browser
-— no local machine needed** (see [DEPLOY.md](DEPLOY.md) for the exact click-path).
+## Quick start (dev)
 
 ```bash
-# one-time
-curl -L https://fly.io/install.sh | sh
-fly auth login
-
-# from the repo root
-fly launch --name guac
-fly secrets set ADGATE_GATEWAY_KEY="<your-key>"
-fly deploy
-
-# you get: https://guac.fly.dev/v1
-# users point their agent at it: base_url = https://guac.fly.dev/v1
+python gateway.py --port 8000          # stub-friendly defaults, dev mode
+for t in test_*.py; do python $t; done # 16 suites, all hermetic
 ```
 
-State (ledger, cadence, supplier quality) persists on a Fly volume mounted at
-`/data` (see `fly.toml`).
+## Production
 
-## Run (local dev)
+Live at `https://addguac.fly.dev` (Fly.io, single VM + `/data` volume).
+See [`DEPLOY.md`](DEPLOY.md) for the full runbook and
+[`DESIGN.md`](DESIGN.md) for the money model.
 
-```bash
-# 1. Configure real upstream(s) in suppliers.json (or set ADGATE_SUPPLIERS_FILE).
-# 2. Run the gateway
-.venv/bin/python gateway.py --port 8000
+## The honest tension
 
-# 3. Point any OpenAI-compatible agent at it:
-#    base_url = http://<host>:8000/v1
-#    api_key  = ADGATE_GATEWAY_KEY
-```
-
-Hermes (custom provider):
-
-```bash
-hermes config set model.provider custom
-hermes config set model.base_url http://<host>:8000/v1
-hermes config set model.api_key dev-gateway-key
-```
-
-## Endpoints
-
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /v1/chat/completions` | OpenAI-compatible inference (ad-aware) |
-| `POST /v1/guac/attribution` | Agent reports it acted on an offer (the "click") |
-| `GET /dashboard` | Impressions + clicks + supplier quality |
-| `GET /healthz` | Deep health check (app + supplier pool + state volume); 200 ok, 503 degraded |
-| `GET /settle` | Operator settlement statement from the live ledger (master key) |
-| `GET /backup` | Operator state backup — all persistent state as one JSON bundle (master key) |
-| `GET /_pool` | Supplier pool quality state (debug) |
-
-## Config (env)
-
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `ADGATE_SUPPLIERS_FILE` | `suppliers.json` | inference source pool |
-| `CHUTES_API_KEY` | (empty) | key for Chutes SN64 supplier (starts `cpk_`) |
-| `ENGY_API_KEY` | (empty) | key for engy SN53 supplier (api.engy.ai) |
-| `OPENROUTER_API_KEY` | (empty) | key for OpenRouter supplier |
-| `ADGATE_ADS_FILE` | `ads.json` | sponsor offers |
-| `ADGATE_DISCOUNT_RATE` | `0.20` | advertiser-funded % off on sponsored requests |
-| `ADGATE_IMPRESSION_COST` | `0.01` | per-impression advertiser cost (budget ÷ cost = max impressions) |
-| `ADGATE_MAGIC_SECRET` | `dev-magic-secret` | signs portal magic-link tokens (set a real secret in prod) |
-| `ADGATE_MAGIC_TTL_S` | `900` | magic-link expiry (seconds) |
-| `ADGATE_GATEWAY_KEY` | `dev-gateway-key` | key the agent sends |
-| `ADGATE_STATE_FILE` | `state.json` | retained for backward compat (unused in V1) |
-| `ADGATE_LEDGER_FILE` | `ledger.jsonl` | metered usage + settlement |
-| `ADGATE_ATTRIBUTION_FILE` | `attribution.jsonl` | click log |
-| `ADGATE_SUPPLIER_STATE_FILE` | `supplier_state.json` | measured quality |
-
-## Test
-
-```bash
-.venv/bin/python test_gateway.py        # injection + metering + discount
-.venv/bin/python test_settlement.py     # money flow + transparent split
-.venv/bin/python test_integration.py    # failover + attribution + dashboard
-```
-
-## Roadmap
-
-- Settlement module (done, Model B)
-- Supplier quality gate + failover + recovery (done)
-- Attribution callback (done)
-- Dashboard (done)
-- Portal: user sign-up + advertiser offers/stats (done)
-- Portal: magic-link auth + advertiser ad manager + per-impression billing (done)
-- Daily sponsorship delivery (done)
-- Real suppliers wired (Chutes SN64, engy SN53, OpenRouter, keys via env) (done)
-- Live hosted deploy at addguac.fly.dev (done)
-- Add gm SN28 (saygm) as a supplier once invite access is granted (currently invite-gated waitlist)
-- Real email delivery for magic links (currently dev-mode: link returned in response)
+On passthrough frontier models guac pays the provider market price while the
+user pays the discounted price — the gap is only covered by ad revenue (or
+supplier spread on the quality-gated pools). The business is therefore an
+ad-funded volume play: distribution (agents routing through guac) and
+inventory (funded advertisers) are the moat, not token margin.

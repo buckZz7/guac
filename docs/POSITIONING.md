@@ -47,8 +47,9 @@ The moat is **distribution** (how many agents route through guac) and **trust**
   conspicuous" disclosure and avoids the trust damage of hidden/in-model ads.
 - **Honest inventory.** Demand-gated: ads only run when funded. No fabricated
   reach. Advertisers buy metered, accountable impressions.
-- **Cheap supply + ad money.** Routing through Bittensor subnets (Chutes/Engy)
-  keeps wholesale low, widening the discount guac can pass through.
+- **Cheap supply + per-model discounts.** Routing through Bittensor subnets
+  (Chutes/Engy) keeps wholesale low; the spread between market reference and
+  actual cost lets those pools carry the biggest user-facing discounts.
 
 ## 4. Where guac should NOT compete
 

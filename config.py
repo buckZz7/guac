@@ -74,16 +74,6 @@ MODEL_DISCOUNTS = {
 # OFF by default: production must never show unfunded, unaffiliated offers.
 ALLOW_DEMO_ADS = os.environ.get("ADGATE_ALLOW_DEMO_ADS", "0") == "1"
 
-# Real per-model wholesale ($/M tokens) that guac pays its suppliers, keyed by
-# supplier name (from suppliers.json). Used by settlement so the transparent
-# split reflects real inference cost, not a flat 35%-of-retail guess.
-# Format: {supplier: (prompt_per_m, completion_per_m)}
-MODEL_PRICING = {
-    "openrouter": (0.25, 1.00),     # deepseek-chat-v3-0324 on OpenRouter
-    "chutes-sn64": (0.05, 0.30),    # approx open-model wholesale on Chutes
-    "engy-sn53": (0.20, 0.80),      # approx open-model wholesale on engy
-}
-
 # Magic-link auth for the portal. Short-lived signed tokens, no passwords.
 MAGIC_SECRET = os.environ.get("ADGATE_MAGIC_SECRET", "dev-magic-secret")
 MAGIC_TTL_S = int(os.environ.get("ADGATE_MAGIC_TTL_S", "900"))
