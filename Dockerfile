@@ -8,8 +8,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the guac codebase.
-COPY config.py suppliers.py settlement.py backup.py gateway.py portal.py portal_html.py daily.py stub.py ads.json suppliers.json ./
+# Copy the guac codebase (runtime files only — no tests/stub/dev tools).
+COPY config.py suppliers.py settlement.py backup.py gateway.py portal.py portal_html.py mailer.py limits.py ads.json suppliers.json ./
 
 # Docs (advertiser pitch is served at /pitch).
 COPY docs/ ./docs/

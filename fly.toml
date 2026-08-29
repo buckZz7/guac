@@ -24,6 +24,10 @@ primary_region = "sjc"
   # means the gateway falls back to "dev-gateway-key", which is only safe for
   # a local/dev instance. Set a real key before going live.
   ADGATE_DISCOUNT_RATE = "0.20"
+  # Production: magic links must be EMAILED, never shown on screen. (Requires an
+  # email service — see DEPLOY.md. Until one is wired, dev mode should stay on
+  # only for trusted testing; flip to 0 when email delivery is live.)
+  ADGATE_DEV_MODE = "0"
   # Public host for sign-up so the returned base_url is correct (no 127.0.0.1).
   ADGATE_PUBLIC_HOST = "https://addguac.fly.dev"
 

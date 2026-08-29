@@ -54,9 +54,8 @@ def landing():
       <div class="col">
         <h2>I'm an agent user</h2>
         <p>Point your agent at guac and pay less for inference. A disclosed
-        sponsor shows up below the answer only at a real decision point — never
-        on plain answers, never in the model. Sign up or log back in with your
-        email.</p>
+        sponsor follows some of your answers — up to a few a day, only when an
+        advertiser is funding it. Sign up or log back in with your email.</p>
         <form method="post" action="/portal/user/login">
           <input type="email" name="email" placeholder="you@example.com" required>
           <button type="submit">Get my API key</button>
@@ -64,9 +63,9 @@ def landing():
       </div>
       <div class="col">
         <h2>I'm an advertiser</h2>
-        <p>Put your offer in front of someone at the exact moment they're
-        choosing in your category. Create offers, set a budget, and see
-        impressions and clicks in real time. Per-impression billing.</p>
+        <p>Put your offer in front of people using agent answers. Create offers,
+        set a budget, and see impressions and clicks in real time. Per-impression
+        billing; your offer runs while it has budget.</p>
         <form method="post" action="/portal/advertiser/login">
           <input type="email" name="email" placeholder="you@company.com" required>
           <button type="submit">Open my ad manager</button>
@@ -78,12 +77,16 @@ def landing():
     return _page("guac", body)
 
 
-def user_login_form(email=None, magic_link=None, error=None):
+def user_login_form(email=None, magic_link=None, error=None, emailed=False):
     flash = ""
     if magic_link:
-        flash = (f'<div class="flash"><strong>Your magic link (dev mode):</strong>'
-                 f'<br><a href="{_html.escape(magic_link)}">{_html.escape(magic_link)}</a>'
-                 f'<br>In production this is emailed to you.</div>')
+        if config.DEV_MODE:
+            flash = (f'<div class="flash"><strong>Dev mode magic link:</strong>'
+                     f'<br><a href="{_html.escape(magic_link)}">{_html.escape(magic_link)}</a></div>')
+        else:
+            flash = '<div class="flash"><strong>Check your email</strong> — we sent you a sign-in link.</div>'
+    elif emailed and not error:
+        flash = '<div class="flash"><strong>Check your email</strong> — we sent you a sign-in link.</div>'
     if error:
         flash = f'<div class="error">{_html.escape(error)}</div>'
     body = f"""
@@ -117,8 +120,8 @@ def user_dashboard(user, savings):
     </div>
     <div class="card">
       <h2>Sponsored messages per day</h2>
-      <p class="meta">No frequency choice — a disclosed sponsor shows up below
-      the answer only at a real decision point, and it funds your discount.</p>
+      <p class="meta">No frequency choice — a disclosed sponsor follows some of
+      your answers, up to a daily cap, and it funds your discount.</p>
     </div>
     <div class="card">
       <h2>Your savings</h2>
@@ -133,12 +136,16 @@ def user_dashboard(user, savings):
     return _page("User portal · guac", body)
 
 
-def advertiser_login_form(email=None, magic_link=None, error=None):
+def advertiser_login_form(email=None, magic_link=None, error=None, emailed=False):
     flash = ""
     if magic_link:
-        flash = (f'<div class="flash"><strong>Your magic link (dev mode):</strong>'
-                 f'<br><a href="{_html.escape(magic_link)}">{_html.escape(magic_link)}</a>'
-                 f'<br>In production this is emailed to you.</div>')
+        if config.DEV_MODE:
+            flash = (f'<div class="flash"><strong>Dev mode magic link:</strong>'
+                     f'<br><a href="{_html.escape(magic_link)}">{_html.escape(magic_link)}</a></div>')
+        else:
+            flash = '<div class="flash"><strong>Check your email</strong> — we sent you a sign-in link.</div>'
+    elif emailed and not error:
+        flash = '<div class="flash"><strong>Check your email</strong> — we sent you a sign-in link.</div>'
     if error:
         flash = f'<div class="error">{_html.escape(error)}</div>'
     body = f"""
@@ -193,15 +200,14 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None):
           <option value="trial">Free trial</option>
           <option value="sponsorship">Sponsorship</option>
         </select>
-        <input type="text" name="intents" placeholder="Intents (comma-sep topics), e.g. hosting, deploy">
         <input type="text" name="image_url" placeholder="Image URL (optional creative)">
         <input type="text" name="link" placeholder="Link (optional, e.g. https://.../agent)">
         <button type="submit">Create offer</button>
       </form>
-      <p class="meta">Intents gate <em>when</em> your offer can appear: it shows
-      only at a decision whose topic matches. You're billed per impression
-      (${config.IMPRESSION_COST:.2f} each); the offer auto-pauses when your
-      budget is spent. <a href="/pitch">How decision-point sponsorship works</a>.</p>
+      <p class="meta">You're billed per impression (${config.IMPRESSION_COST:.2f}
+      each); the offer auto-pauses when your budget is spent. Your offer runs
+      while it has budget — no keyword targeting in V1. <a href="/pitch">How
+      guac sponsorship works</a>.</p>
     </div>
     <div class="card">
       <h2>Your offers</h2>

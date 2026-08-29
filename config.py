@@ -59,6 +59,18 @@ MAGIC_TTL_S = int(os.environ.get("ADGATE_MAGIC_TTL_S", "900"))
 # Track used magic-link nonces so a link is one-time-use (can't be replayed).
 MAGIC_USED_FILE = Path(os.environ.get("ADGATE_MAGIC_USED_FILE",
                                        str(BASE / "magic_used.json")))
+# Dev mode: display the magic link on-screen instead of emailing it. MUST be
+# off in production, or anyone who submits an email can log in as that user.
+DEV_MODE = os.environ.get("ADGATE_DEV_MODE", "1") == "1"
+
+# Email delivery for magic links (required when DEV_MODE is off). SMTP config.
+# If SMTP_HOST is unset, login links are NOT delivered and the portal is
+# effectively closed — set these before going live.
+SMTP_HOST = os.environ.get("ADGATE_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("ADGATE_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("ADGATE_SMTP_USER", "")
+SMTP_PASS = os.environ.get("ADGATE_SMTP_PASS", "")
+EMAIL_FROM = os.environ.get("ADGATE_EMAIL_FROM", "")
 
 # Ledger of metered usage (tokens + settlement). Plain JSON lines.
 LEDGER_FILE = Path(os.environ.get("ADGATE_LEDGER_FILE", str(BASE / "ledger.jsonl")))
@@ -81,6 +93,12 @@ ADVERTISERS_FILE = Path(os.environ.get("ADGATE_ADVERTISERS_FILE",
 
 # How to identify a user. Default header the agent/gateway should send.
 USER_ID_HEADER = "x-user-id"
+
+# Abuse / quota limits (per-process counters; reset on restart).
+SIGNUP_PER_IP_PER_HOUR = int(os.environ.get("ADGATE_SIGNUP_PER_IP_PER_HOUR", "10"))
+# Max tokens a single user key may consume per day (0 = unlimited). Guards
+# against a leaked/abused key burning unbounded upstream spend.
+DAILY_TOKEN_CAP = int(os.environ.get("ADGATE_DAILY_TOKEN_CAP", "0"))
 
 
 def load_ads():

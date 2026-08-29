@@ -16,12 +16,15 @@ import html
 import json
 import re
 import time
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 import httpx
 
 import config
+import limits
+import mailer
 from suppliers import load_pool
 import portal
 import portal_html
@@ -145,6 +148,36 @@ def _words(s):
     return len((s or "").split())
 
 
+def _valid_https_url(url):
+    """A link must be a well-formed https URL (no javascript:, file:, etc.)."""
+    if not url:
+        return True  # optional
+    try:
+        p = urlparse(url)
+    except ValueError:
+        return False
+    return p.scheme == "https" and bool(p.netloc)
+
+
+def _safe_offer_fields(headline, body, claim, image_url, link):
+    """Trim + validate offer fields. Returns (cleaned_dict, error_or_None)."""
+    headline = (headline or "").strip()
+    body = (body or "").strip()
+    claim = (claim or "").strip()
+    image_url = (image_url or "").strip()
+    link = (link or "").strip()
+    if not headline:
+        return None, "headline required"
+    if link and not _valid_https_url(link):
+        return None, "link must be a valid https:// URL"
+    if image_url and not _valid_https_url(image_url):
+        return None, "image_url must be a valid https:// URL"
+    return {
+        "headline": headline, "body": body, "claim": claim,
+        "image_url": image_url, "link": link,
+    }, None
+
+
 def _prompt_tokens(body):
     n = 0
     for m in body.get("messages", []):
@@ -194,9 +227,11 @@ def healthz():
 
 
 @app.get("/_pool")
-def pool_status():
-    """Debug route: supplier pool quality state."""
-    return POOL.stats()
+def pool_status(request: Request):
+    """Debug route: supplier pool quality state. Master-key only."""
+    if _master_key(request):
+        return POOL.stats()
+    return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
 
 
 @app.get("/v1/models")
@@ -220,6 +255,15 @@ async def chat_completions(request: Request):
     stream = bool(body.get("stream", False))
     uid = user_id
     model = body.get("model", "guac")
+
+    # Per-key daily token budget: reject before forwarding if this key would
+    # exceed its cap. Uses the prompt size as a conservative estimate so a key
+    # can't burn unbounded upstream spend.
+    if config.DAILY_TOKEN_CAP > 0:
+        est = _prompt_tokens(body)
+        if not limits.token_budget_ok(api_key or uid, est):
+            return JSONResponse({"error": {"message": "daily token budget exceeded"}},
+                                status_code=429)
 
     # V1 (decision-point): we do NOT inject anything into the model. The
     # request forwards unchanged; a sponsorship is appended BELOW the answer
@@ -324,6 +368,8 @@ async def chat_completions(request: Request):
                                 "completion_tokens": _words(full),
                                 "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
                             })
+                            limits.record_tokens(api_key or uid,
+                                                 _prompt_tokens(body) + _words(full))
                             if done_event:
                                 yield done_event
                         finally:
@@ -393,6 +439,7 @@ async def chat_completions(request: Request):
         "completion_tokens": completion_tk,
         "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
     })
+    limits.record_tokens(api_key or uid, prompt_tk + completion_tk)
     return JSONResponse(data)
 
 
@@ -466,6 +513,11 @@ async def attribution(request: Request):
 @app.post("/signup")
 async def signup(request: Request):
     """User self-serve sign-up. Returns api_key + base_url. That's it."""
+    # Rate-limit signups per source IP to stop account-spam.
+    client_ip = request.client.host if request.client else "unknown"
+    if not limits.allow_signup(client_ip):
+        return JSONResponse({"error": {"message": "too many signups — try later"}},
+                            status_code=429)
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     if not email or "@" not in email:
@@ -489,23 +541,24 @@ async def create_advertiser_offer(request: Request):
     if not advertiser_email:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     body = await request.json()
-    headline = (body.get("headline") or "").strip()
-    body_txt = (body.get("body") or "").strip()
-    claim = (body.get("claim") or "").strip()
-    budget = body.get("budget")
     offer_type = (body.get("offer_type") or "discount").strip()
     intents = body.get("intents", [])
-    image_url = (body.get("image_url") or "").strip()
-    link = (body.get("link") or "").strip()
-    if not (headline and budget):
+    cleaned, err = _safe_offer_fields(body.get("headline"), body.get("body"),
+                                      body.get("claim"), body.get("image_url"),
+                                      body.get("link"))
+    if err:
+        return JSONResponse({"error": {"message": err}}, status_code=400)
+    budget = body.get("budget")
+    if not cleaned["headline"] or budget is None:
         return JSONResponse({"error": {"message": "headline, budget required"}},
                             status_code=400)
     try:
         budget = float(budget)
     except (TypeError, ValueError):
         return JSONResponse({"error": {"message": "budget must be a number"}}, status_code=400)
-    offer = portal.create_offer(advertiser_email, headline, body_txt, claim, budget,
-                                offer_type, intents, image_url, link)
+    offer = portal.create_offer(advertiser_email, cleaned["headline"], cleaned["body"],
+                                cleaned["claim"], budget, offer_type, intents,
+                                cleaned["image_url"], cleaned["link"])
     return {"offer_id": offer["id"], "budget": offer["budget"], "status": "created"}
 
 
@@ -529,6 +582,13 @@ def _auth_advertiser(request):
         return "master"
     adv = portal.get_advertiser_by_token(api_key)
     return adv.get("email") if adv else None
+
+
+def _master_key(request):
+    """True iff the request carries the master gateway key (Bearer or query)."""
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    return bool(api_key) and api_key == config.GATEWAY_KEY
 
 
 @app.get("/settle")
@@ -585,8 +645,10 @@ def pitch():
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard():
-    """Lightweight dashboard: impressions + clicks for both sides."""
+def dashboard(request: Request):
+    """Operator dashboard: impressions + clicks for both sides. Master-key only."""
+    if not _master_key(request):
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     rows = _read_ledger(config.LEDGER_FILE)
     attrib = _read_ledger(config.ATTRIBUTION_FILE)
 
@@ -740,6 +802,14 @@ async def portal_user_login(request: Request):
     if not portal.get_user_by_email(email):
         portal.create_user(email)
     link = _magic_link_for("user", email)
+    if not config.DEV_MODE:
+        # Production: email the link. If email isn't configured, surface that
+        # clearly rather than showing the link on screen.
+        if not mailer.send_magic_link(email, link):
+            return portal_html.user_login_form(
+                email, error="Email delivery isn't configured yet — sign-in links "
+                             "can't be sent. The portal isn't open for public sign-up.")
+        return portal_html.user_login_form(email, magic_link=None, emailed=True)
     return portal_html.user_login_form(email, magic_link=link)
 
 
@@ -770,6 +840,12 @@ async def portal_advertiser_login(request: Request):
     if not portal.get_advertiser(email):
         portal.create_advertiser(email)
     link = _magic_link_for("advertiser", email)
+    if not config.DEV_MODE:
+        if not mailer.send_magic_link(email, link):
+            return portal_html.advertiser_login_form(
+                email, error="Email delivery isn't configured yet — sign-in links "
+                             "can't be sent. The portal isn't open for public sign-up.")
+        return portal_html.advertiser_login_form(email, magic_link=None, emailed=True)
     return portal_html.advertiser_login_form(email, magic_link=link)
 
 
@@ -790,27 +866,28 @@ async def portal_advertiser_auth(request: Request):
 async def portal_advertiser_offer(request: Request):
     form = await request.form()
     email = (form.get("email") or "").strip().lower()
-    headline = (form.get("headline") or "").strip()
-    body_txt = (form.get("body") or "").strip()
-    claim = (form.get("claim") or "").strip()
     offer_type = (form.get("offer_type") or "discount").strip()
     intents = [k.strip() for k in (form.get("intents") or "").split(",") if k.strip()]
-    image_url = (form.get("image_url") or "").strip()
-    link = (form.get("link") or "").strip()
     adv = portal.get_advertiser(email)
     if not adv:
         return portal_html.advertiser_login_form(error="Not logged in")
+    cleaned, err = _safe_offer_fields(form.get("headline"), form.get("body"),
+                                      form.get("claim"), form.get("image_url"),
+                                      form.get("link"))
+    if err:
+        return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                                error=err)
     budget_raw = form.get("budget")
     try:
         budget = float(budget_raw)
     except (TypeError, ValueError):
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                                 error="Budget must be a number")
-    if not headline or budget <= 0:
+    if not cleaned["headline"] or budget <= 0:
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                                 error="Headline and positive budget required")
-    offer = portal.create_offer(email, headline, body_txt, claim, budget, offer_type,
-                                intents, image_url, link)
+    offer = portal.create_offer(email, cleaned["headline"], cleaned["body"], cleaned["claim"],
+                                budget, offer_type, intents, cleaned["image_url"], cleaned["link"])
     return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                             created=offer["headline"])
 

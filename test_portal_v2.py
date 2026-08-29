@@ -22,30 +22,39 @@ print("PASS  /pitch renders the advertiser pitch (or fallback)")
 # 2) landing page has the pitch link + new copy
 r = c.get("/portal")
 assert r.status_code == 200 and "Read the advertiser pitch" in r.text
-assert "moment they're" in r.text
-print("PASS  /portal landing has pitch link + decision-point copy")
+assert "using agent answers" in r.text
+print("PASS  /portal landing has pitch link + demand-gated copy")
 
-# 3) advertiser offer form (dashboard) has intents/image_url/link fields
+# 3) advertiser offer form (dashboard) has image_url/link fields (no intents)
 import portal, portal_html
 adv = portal.get_advertiser("adv@x.com") or portal.create_advertiser("adv@x.com")
 html = portal_html.advertiser_dashboard(adv, portal.offer_stats_for("adv@x.com"))
-for token in ("name=\"intents\"", "name=\"image_url\"", "name=\"link\"",
-              "How decision-point sponsorship works"):
+for token in ("name=\"image_url\"", "name=\"link\"",
+              "guac sponsorship works"):
     assert token in html, f"missing {token} in advertiser form"
-print("PASS  advertiser offer form has intents/image_url/link + pitch link")
+assert "name=\"intents\"" not in html, "intents field should be removed"
+print("PASS  advertiser offer form has image_url/link + pitch link (no intents)")
 
 # 4) create an offer through the portal with the new fields, verify stored
 r = c.post("/portal/advertiser/offer", data={
     "email": "adv@x.com", "headline": "50% off hosting", "body": "b",
     "claim": "CODE", "budget": "5", "offer_type": "discount",
-    "intents": "hosting, deploy", "image_url": "https://x/y.png",
+    "image_url": "https://x/y.png",
     "link": "https://x/agent"})
 assert r.status_code == 200, r.status_code
 offers = gateway.portal._offers()
 assert offers, "offer not created"
 o = offers[-1]
-assert o["intents"] == ["hosting", "deploy"], o["intents"]
 assert o["image_url"] == "https://x/y.png" and o["link"] == "https://x/agent"
-print("PASS  offer stored with intents + image_url + link")
+print("PASS  offer stored with image_url + link")
+
+# 5) invalid link rejected
+r = c.post("/portal/advertiser/offer", data={
+    "email": "adv@x.com", "headline": "bad link", "body": "b",
+    "claim": "C", "budget": "5", "link": "javascript:alert(1)"})
+assert r.status_code == 200, r.status_code  # renders dashboard with error
+offers = gateway.portal._offers()
+assert offers[-1]["headline"] != "bad link", "javascript: link must be rejected"
+print("PASS  invalid (javascript:) link rejected")
 
 print("\nPORTAL/PITCH SMOKE TESTS PASSED")

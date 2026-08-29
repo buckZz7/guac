@@ -28,7 +28,7 @@ import portal
 
 def main():
     # seed some state
-    portal.create_user("a@b.com", 2)
+    portal.create_user("a@b.com")
     portal.create_advertiser("adv@b.com")
     offer = portal.create_offer("adv@b.com", "head", "body", "claim", 5.0)
     portal.charge_impression(offer["id"])

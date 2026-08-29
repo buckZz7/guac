@@ -104,8 +104,9 @@ def main():
         httpx.post(STUB_A + "/_recover")
         r3 = c.post("/v1/chat/completions", json=payload)
         assert r3.status_code == 200
-        # gateway reports supplier pool health via a debug route
-        st = httpx.get(GW + "/_pool").json()
+        # gateway reports supplier pool health via a debug route (master-key only)
+        st = httpx.get(GW + "/_pool",
+                       headers={"authorization": f"Bearer {KEY}"}).json()
         assert st["primary"]["healthy"] is True, st
         print("primary healthy after recovery:", "✓")
 

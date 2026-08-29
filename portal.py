@@ -180,6 +180,11 @@ def _used_nonces():
 
 
 def _save_used_nonces(nonces):
+    # Keep the store bounded: drop entries older than ~7x the TTL (they can
+    # never be valid again). Prevents unbounded growth on a long-lived instance.
+    max_age = max(86400, config.MAGIC_TTL_S * 7)
+    cutoff = int(_now().timestamp()) - max_age
+    nonces = [n for n in nonces if isinstance(n, dict) and n.get("at", 0) >= cutoff]
     _write_json(config.MAGIC_USED_FILE, nonces)
 
 
@@ -198,14 +203,14 @@ def verify_magic_token(token):
         role, email, nonce, exp, sig = token.split("|")
         # Reject already-used links (one-time use) before anything else.
         used = _used_nonces()
-        if nonce in used:
+        if any(isinstance(u, dict) and u.get("nonce") == nonce for u in used):
             return None
         if not hmac.compare_digest(_sign(f"{role}|{email}|{nonce}|{exp}"), sig):
             return None
         if int(exp) <= int(_now().timestamp()):
             return None
         # Mark used so a leaked/replayed link can't log in again.
-        used.append(nonce)
+        used.append({"nonce": nonce, "at": int(_now().timestamp())})
         _save_used_nonces(used)
         return role, email
     except (ValueError, TypeError):
