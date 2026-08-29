@@ -2,14 +2,34 @@
 
 *Advertiser pays. User saves. Middleman stays small.*
 
-**Version 3 — v1 is human-facing sponsorship.**
+**Version 4 — v1 is decision-point sponsorship.**
 
-The v1 sponsorship is a **"brought to you by"** message for the human, not an
-offer fed to the agent. The gateway never touches the model's context — it
-forwards the request unchanged and attaches the disclosed sponsorship payload
-to the response. This removes the injection risk and the "agent as hard buyer"
+The v1 sponsorship is a **`Sponsor:` footer** for the human, delivered inline
+at the moment it matters. The gateway never touches the model's context — it
+forwards the request unchanged and appends the disclosed footer **below** the
+answer, delimited by `---`, so everything above the line is byte-identical to
+the model output. This removes the injection risk and the "agent as hard buyer"
 machinery from the critical path. The agent-native version is a later layer on
 top of the same economics.
+
+**There is no frequency knob.** No "1/5/10 ads a day" choice — an ad is shown
+only when it is **earned**, at a genuine decision point. The gate is
+deterministic (no LLM judge):
+
+1. **Final answer** — `finish_reason == "stop"`. Mid-loop `tool_calls` turns
+   (the agent narrating tool work) never qualify — this is what removes the
+   "bunch of intermediate messages" noise.
+2. **Handoff** — the final answer actually poses a decision to the user (ends
+   in `?` or a handoff phrase like "which / do you want me to / your options
+   are"). Plain statements ("here's the result") don't qualify.
+3. **Topic match** — at least one offer's `intent` tag appears in the decision
+   text. No match → no ad. Highest match count wins; tie-break by id.
+
+The footer carries the sponsor name, headline, body, claim, and optionally an
+`image_url` (renders as native media) and `link` (tappable). This is the
+**decision slot** — the highest-attention, highest-intent moment in the system,
+the Amazon-sponsored-products analog: the offer is a *relevant option at the
+moment of need*, not noise.
 
 ## The model in one line
 guac resells inference. Advertisers pay to reach your agent; that money lowers
@@ -67,24 +87,33 @@ So sourcing can never be "cheapest miner wins":
 
 ---
 
-## User side (one choice)
+## User side (no choice — ads are placed for you)
 
-> *"How many sponsored offers a day do you want to see? 1 / 5 / 10 — more offers = bigger discount."*
+The user makes **no frequency choice**. V1 places an ad only at a genuine
+decision point — the moment the agent hands off to you with a real choice. There
+is no "how many ads a day" knob; you never get ads on plain answers or mid-loop
+narration. The only user-facing trust is the disclosure: the ad sits below a
+`---` line, clearly separated from the model's answer, and it funds your discount.
 
-That's the entire user surface. They pick a number, they get a lower $/M token rate.
-The only persistent user state is that choice. No account, no credit, no wallet.
-
-The ad is a **"brought to you by"** message attached to the response — the human
-sees it, the model never does. Familiar, trusted, zero-skepticism format (radio /
-podcast / newsletter sponsorship).
+The ad is a **`Sponsor:` footer** attached to the response — the human sees it,
+the model never does. It rides on real attention (you're reading the decision),
+so it's trusted rather than noise.
 
 ## Advertiser side (one form)
 
-> *Offer text · budget · target (which agent context) · how long it runs*
+> *Headline · body · claim · budget · intents (topic keywords) · image_url · link*
 
-V1: they buy **delivered impressions to a human who opted in to see them** — a
-known, honest ad surface. Later (agent-native): they buy **offers delivered to
-agents that are actually deciding/buying**, with the agent as a hard buyer.
+They buy **delivered impressions at relevant decision moments**. The `intents`
+tags decide *when* the offer can appear — the offer only surfaces when the
+conversation is actually about that topic, so the ad is a relevant option, not a
+banner. Later (agent-native): they buy **offers delivered to agents that are
+actually deciding/buying**, with the agent as a hard buyer.
+
+Note the value proposition changed with decision-point placement: you can no
+longer guarantee an advertiser N impressions a day (if N decision points don't
+happen, they don't happen). The sell is **precision and relevance** (offers at
+the exact moment of need), not reach. That's a stronger, more defensible pitch —
+but it's a different one.
 
 ---
 
@@ -116,8 +145,10 @@ full bill, the surplus is carried forward as credit — never pocketed by guac.
 
 Both come from the ledger, but they're not the same, and "click" needs a definition.
 
-- **Impressions** — already free. The gateway meters every request and every
-  injection. A dashboard is just the ledger rendered.
+- **Impressions** — the gateway meters every request and every injected footer.
+  A dashboard is just the ledger rendered. With decision-point placement, an
+  impression is high-value by construction: it only happens at a genuine,
+  relevant decision moment, so it's far more meaningful than a page view.
 - **Clicks** — an agent doesn't click. A click = **the agent acted on an offer**
   (accepted, redeemed, referenced it). You can't see that from the proxy alone;
   the agent must report back. So guac ships a tiny **attribution callback**:

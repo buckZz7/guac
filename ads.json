@@ -6,7 +6,10 @@
     "body": "Deploy your app to a vetted node with daily backups and 99.9% uptime. Use offer code AGENT50 at checkout.",
     "offer_type": "discount",
     "redeemable": true,
-    "claim": "50% off first 3 months, code AGENT50"
+    "claim": "50% off first 3 months, code AGENT50",
+    "intents": ["hosting", "deploy", "host", "server", "node"],
+    "image_url": "https://cdn.example.com/acme-hosting.png",
+    "link": "https://acme.example.com/agent"
   },
   {
     "id": "sponsor-002",
@@ -15,6 +18,9 @@
     "body": "Full managed vector DB with pgvector compatibility. No credit card required for the trial.",
     "offer_type": "trial",
     "redeemable": true,
-    "claim": "30-day free trial, no card"
+    "claim": "30-day free trial, no card",
+    "intents": ["database", "vector", "storage", "pgvector", "db"],
+    "image_url": "https://cdn.example.com/nimbus-data.png",
+    "link": "https://nimbus.example.com/vector"
   }
 ]

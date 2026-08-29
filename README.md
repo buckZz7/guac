@@ -1,11 +1,15 @@
 # guac
 
 OpenAI-compatible gateway that sits between an agent and its inference provider.
-V1 is human-facing sponsorship: when a sponsored offer is due, guac attaches a
-disclosed **"brought to you by"** payload to the response — for the human to see,
-never fed into the model. It routes through a quality-gated pool of cheap
-suppliers (with failover), meters the exact tokens, and applies a transparent,
+V1 is **decision-point sponsorship**: when the agent's answer is a final turn
+that hands off to the user AND an offer's intent matches the topic, guac appends
+a disclosed **`Sponsor:` footer** below the answer — for the human to see, never
+fed into the model. It routes through a quality-gated pool of cheap suppliers
+(with failover), meters the exact tokens, and applies a transparent,
 advertiser-funded discount to the user's per-token cost.
+
+There is no frequency knob — an ad is shown only when it's earned, at a genuine
+decision point. Plain answers and mid-loop tool narration never qualify.
 
 The user's discount is a lower price, not a credit. No wallets, no balances.
 
@@ -13,16 +17,23 @@ The user's discount is a lower price, not a credit. No wallets, no balances.
 [agent] --base_url=guac--> [gateway] --quality-gated pool--> [suppliers]
    (Hermes/OpenClaw/Codex)     /|\                           (SN64/SN53/SN28/retail)
         user pays discounted rate <---|  advertiser money lowers it
-   human sees "Brought to you by <sponsor>" on the response (never the model)
+   human sees "Sponsor: <sponsor>" below the answer, after a --- line (never the model)
 ```
 
 ## v1 design choice
 
 The v1 sponsorship is **human-facing**, not agent-native. The gateway never
 injects anything into the model's context (costs no tokens, never influences
-inference). The disclosed sponsorship rides on the response for the human.
-The later agent-native "hard buyer" version can be layered on without changing
-the economics.
+inference). The disclosed footer is appended BELOW the answer, delimited by
+`---`, so everything above the line is byte-identical to the model output.
+
+The ad fires only when **all three** hold, deterministically:
+1. **Final answer** — `finish_reason == "stop"` (mid-loop `tool_calls` turns never qualify)
+2. **Handoff** — the answer poses a real decision to the user (ends in `?` or a handoff phrase)
+3. **Topic match** — an offer's `intent` tag appears in the decision text; highest match wins
+
+The later agent-native "hard buyer" version (the agent flagging real decision
+points back to guac) can be layered on without changing the economics.
 
 ## Model
 
@@ -51,7 +62,7 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 | `settlement.py` | Monthly statement from the ledger (Model B economics) |
 | `portal.py` | Self-serve sign-up (users) + advertiser accounts/offers + per-impression billing + magic-link auth |
 | `portal_html.py` | Server-rendered HTML UI for the portal (user + advertiser consoles) |
-| `daily.py` | Emits the daily "brought to you by" sponsorship (companion delivery) |
+| `daily.py` | Retired — the old timer-based companion (wrong slot; superseded by decision-point footers) |
 | `config.py` | Env-driven configuration |
 | `ads.json` | Sponsor offers (fallback) |
 | `suppliers.json` | Inference sources (Chutes SN64, engy SN53, OpenRouter; keys via env) |
@@ -62,29 +73,30 @@ user. Full rationale in [DESIGN.md](DESIGN.md).
 
 **Users sign up** — get an API key + base_url:
 ```
-POST /signup    {"email": "...", "ads_per_day": 1}
+POST /signup    {"email": "..."}
                 -> {"api_key": "guac_...", "base_url": "https://<host>/v1"}
 ```
-Or use the web UI (`/portal`) — magic-link login, re-view your key, adjust ads/day.
+Or use the web UI (`/portal`) — magic-link login, re-view your key.
 
 **Advertisers** — magic-link login, no passwords:
 - **Ad manager UI** (`/portal`): create offers, set budgets, pause/resume, see live impressions/spend
-- **Per-impression billing**: each delivered "brought to you by" costs one impression; an offer auto-pauses when its budget is spent
+- **Per-impression billing**: each delivered sponsorship costs one impression; an offer auto-pauses when its budget is spent
 - **API** (advertiser's own token, not the master key):
 ```
-POST /advertiser/offer   {"headline","body","claim","budget","offer_type"}
+POST /advertiser/offer   {"headline","body","claim","budget","offer_type",
+                          "intents":["hosting"],"image_url":"...","link":"..."}
 GET  /advertiser/stats   -> offers scoped to that advertiser
 ```
+`intents` (topic keywords) gate when the offer can appear at a decision point;
+`image_url`/`link` render in the footer.
 
-## Daily delivery
+## Daily delivery (retired)
 
-`daily.py` emits the day's human-facing sponsorship:
-```
-.venv/bin/python daily.py
-# -> ✨ Brought to you by <sponsor> — <headline>. / Redeem: ...
-```
-Run it once a day (a cron job) and deliver the output — e.g. a no_agent Hermes
-cron to Telegram. Zero LLM tokens by design.
+`daily.py` was the old timer-based companion — it fired once a day on a schedule,
+which is the wrong slot. It's superseded by the decision-point footer: an ad now
+appears only at a real decision moment, delivered inline with the answer it
+belongs to. `daily.py` is kept for reference but is no longer the recommended
+surface (and fires no cron).
 
 ## Deploy (hosted service)
 
@@ -151,13 +163,12 @@ hermes config set model.api_key dev-gateway-key
 | `ENGY_API_KEY` | (empty) | key for engy SN53 supplier (api.engy.ai) |
 | `OPENROUTER_API_KEY` | (empty) | key for OpenRouter supplier |
 | `ADGATE_ADS_FILE` | `ads.json` | sponsor offers |
-| `ADGATE_ADS_PER_DAY` | `1` | ads a user sees per day |
-| `ADGATE_DISCOUNT_RATE` | `0.20` | advertiser-funded % off |
+| `ADGATE_DISCOUNT_RATE` | `0.20` | advertiser-funded % off on sponsored requests |
 | `ADGATE_IMPRESSION_COST` | `0.01` | per-impression advertiser cost (budget ÷ cost = max impressions) |
 | `ADGATE_MAGIC_SECRET` | `dev-magic-secret` | signs portal magic-link tokens (set a real secret in prod) |
 | `ADGATE_MAGIC_TTL_S` | `900` | magic-link expiry (seconds) |
 | `ADGATE_GATEWAY_KEY` | `dev-gateway-key` | key the agent sends |
-| `ADGATE_STATE_FILE` | `state.json` | per-user ad cadence |
+| `ADGATE_STATE_FILE` | `state.json` | retained for backward compat (unused in V1) |
 | `ADGATE_LEDGER_FILE` | `ledger.jsonl` | metered usage + settlement |
 | `ADGATE_ATTRIBUTION_FILE` | `attribution.jsonl` | click log |
 | `ADGATE_SUPPLIER_STATE_FILE` | `supplier_state.json` | measured quality |

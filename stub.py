@@ -39,12 +39,19 @@ async def completions(request: Request):
     last_user = [m.get("content", "") for m in messages if m.get("role") == "user"]
     last_user = last_user[-1] if last_user else ""
     injected = "Sponsored offer" in (sys[0] if sys else "")
+    # Test hooks: the gateway forwards the body unchanged, so tests can pin the
+    # stub's output via private fields to exercise the decision-point gate.
+    content = body.get("_stub_content") or ("(stub) " + last_user[:40])
+    finish = body.get("_stub_finish", "stop")
     # Count tokens crudely for the meter.
     prompt = sum(len(s.split()) for s in sys) + len(last_user.split())
 
     # SSE streaming mode (used by the streaming regression test).
     if body.get("stream"):
-        content = "(stub) " + last_user[:40] + (" | ad-injected" if injected else "")
+        if not injected:
+            content = content  # echo as-is
+        else:
+            content = content + " | ad-injected"
         import time as _t
         async def sse():
             for tok in content.split(" "):
@@ -55,7 +62,7 @@ async def completions(request: Request):
                 yield f"data: {json.dumps(chunk)}\n\n"
             done = {"id": "cmpl-stub", "object": "chat.completion.chunk",
                     "created": 0, "model": body.get("model", "stub"),
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}
             yield f"data: {json.dumps(done)}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(sse(), media_type="text/event-stream")
@@ -69,15 +76,14 @@ async def completions(request: Request):
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": ("(stub) " + last_user[:40]
-                            + (" | ad-injected" if injected else "")),
+                "content": content + (" | ad-injected" if injected else ""),
             },
-            "finish_reason": "stop",
+            "finish_reason": finish,
         }],
         "usage": {
             "prompt_tokens": prompt,
-            "completion_tokens": 5,
-            "total_tokens": prompt + 5,
+            "completion_tokens": len(content.split()),
+            "total_tokens": prompt + len(content.split()),
         },
     }
 

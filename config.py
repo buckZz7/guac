@@ -23,11 +23,9 @@ SUPPLIERS_FILE = Path(os.environ.get("ADGATE_SUPPLIERS_FILE", str(BASE / "suppli
 SUPPLIER_STATE_FILE = Path(os.environ.get("ADGATE_SUPPLIER_STATE_FILE",
                                           str(BASE / "supplier_state.json")))
 
-# Runtime state: per-user "today's ad count". Persisted so restarts don't spam.
+# Runtime state file (kept for backward compat; no longer used for ad cadence —
+# V1 shows ads only at decision points, with no per-day frequency knob).
 STATE_FILE = Path(os.environ.get("ADGATE_STATE_FILE", str(BASE / "state.json")))
-
-# How many ads a user sees per day (user chose this). Start at 1.
-ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "1"))
 
 # Supplier quality scoring: latency below GRACE costs nothing (cheap inference
 # is naturally 1-3s even when reliable); above it score decays to zero at HARD.

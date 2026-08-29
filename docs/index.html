@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>guac — sponsored offers lower your AI token cost</title>
-<meta name="description" content="guac is an ad-aware inference gateway. Opt into sponsored offers, route through cheap quality-gated suppliers, and pay less per token. The split is always public. Self-serve portal for users and advertisers.">
+<meta name="description" content="guac is an ad-aware inference gateway. A disclosed sponsor appears below your answer only at a real decision point, matched to your topic. Route through cheap quality-gated suppliers and pay less per token. The split is always public. Self-serve portal for users and advertisers.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -85,7 +85,7 @@
     <div class="eyebrow">ad-aware inference gateway · live</div>
     <div class="live" style="margin-bottom:1.25rem"><span class="pulse"></span><span>https://addguac.fly.dev</span></div>
     <h1>Sponsored offers lower<br>your <span class="hl">per-token</span> cost.</h1>
-    <p class="lede">guac sits between your agent and its model. You opt into a few sponsored offers a day. That advertiser money — plus cheap, quality-gated supply — cuts what you pay for inference. The sponsorship is a simple <b>"brought to you by"</b> message you see on the response; the model is never touched. No credits, no wallets. <b>The price is just lower.</b></p>
+    <p class="lede">guac sits between your agent and its model. A disclosed sponsor shows up below your answer <b>only at a real decision point</b> — matched to your topic, never on plain answers, never in the model. That advertiser money — plus cheap, quality-gated supply — cuts what you pay for inference. No frequency choice, no credits, no wallets. <b>The price is just lower.</b></p>
     <div class="cta">
       <a class="btn btn-primary" href="https://addguac.fly.dev/portal">Open the portal</a>
       <a class="btn btn-ghost" href="#model">How it works</a>
@@ -99,10 +99,10 @@
   <section id="model">
     <h2>How the money flows</h2>
     <div class="grid3">
-      <div class="card"><div class="ic">🎯</div><h3>You opt in</h3>
-        <p>Pick how many sponsored offers a day to see (1 / 5 / 10). More offers, bigger discount. Sign up in the portal, get an API key + base URL.</p></div>
-      <div class="card"><div class="ic">💬</div><h3>"Brought to you by"</h3>
-        <p>The sponsorship rides on the response for you to see — it's never fed into the model, so it costs no tokens and never influences inference.</p></div>
+      <div class="card"><div class="ic">🎯</div><h3>Placed at the decision</h3>
+        <p>A disclosed sponsor appears only when your agent hands off a real choice — matched to your topic. No frequency choice; you never see ads on plain answers or mid-loop narration.</p></div>
+      <div class="card"><div class="ic">💬</div><h3>"Sponsor:" footer</h3>
+        <p>The sponsorship sits below your answer, after a <b>---</b> divider — everything above it is the model, untouched. It costs no tokens and never influences inference.</p></div>
       <div class="card"><div class="ic">🧾</div><h3>Transparent split</h3>
         <p>The discount is a lower price, never a credit. User saving = sponsor money minus guac's fee. Always public, always reconcilable.</p></div>
     </div>
@@ -113,6 +113,8 @@
     <div class="grid3">
       <div class="card"><div class="ic">🖥️</div><h3>Self-serve console</h3>
         <p>Sign in with a magic link, create offers, set a budget, pause or resume anytime. No sales call, no master key.</p></div>
+      <div class="card"><div class="ic">🎯</div><h3>Topic-matched placement</h3>
+        <p>Set intents (topic keywords). Your offer only appears at a real decision about that topic — a relevant option at the moment of need, not a banner.</p></div>
       <div class="card"><div class="ic">📊</div><h3>Per-impression billing</h3>
         <p>You're billed per delivered impression. See spend, impressions, and budget remaining in real time. An offer auto-pauses when its budget is spent.</p></div>
       <div class="card"><div class="ic">✅</div><h3>Honest clicks</h3>
@@ -134,8 +136,8 @@
 
   <section id="run">
     <h2>Run it — it's live</h2>
-    <p style="color:#8b93a7;max-width:40rem;margin-bottom:1.25rem">guac runs as a hosted service. Sign up at the portal to get an API key + base URL, then point any OpenAI-compatible agent at it.</p>
-    <pre class="code"><span class="c"># gateway is OpenAI-compatible. Point any agent at the hosted service.</span>
+    <p style="color:#8b93a7;max-width:40rem;margin-bottom:1.25rem">guac runs as a hosted service. Sign up at the portal to get an API key + base URL, then point <b>any OpenAI-compatible agent</b> at it — Hermes, OpenClaw, Codex, or a plain CLI.</p>
+    <pre class="code"><span class="c"># gateway is OpenAI-compatible — works with any agent, no client changes.</span>
 <span class="g">$</span> # 1. get a key at https://addguac.fly.dev/portal
 <span class="g">$</span> hermes config set model.provider custom
 <span class="g">$</span> hermes config set model.base_url https://addguac.fly.dev/v1

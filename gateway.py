@@ -12,7 +12,9 @@ Point any agent (Hermes custom provider, OpenClaw, Codex) at this endpoint:
 """
 import argparse
 import datetime as _dt
+import html
 import json
+import re
 import time
 
 from fastapi import FastAPI, Request
@@ -35,44 +37,74 @@ POOL = load_pool()
 # Request model helpers (lenient — just forward what we don't touch)
 # ---------------------------------------------------------------------------
 
-def _today():
-    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-
 
 def _user_id(request: Request) -> str:
     return request.headers.get(config.USER_ID_HEADER, "default")
 
 
-def _pick_offer(used_ids):
-    """Pick an active offer the user hasn't seen today. Deterministic, not an LLM.
-
-    Sources from the portal's offer store (which carries budget/impression
-    state), falling back to the static ads.json if no portal offers exist.
-    """
-    # Portal offers: active, not paused, budget remaining.
+def _active_offers():
+    """Active offers from the portal store (budget remaining), falling back to
+    the static ads.json if no portal offers are configured. No per-day logic."""
     portal_offers = [o for o in portal._offers()
-                     if o["active"] and not o["paused"]
+                     if o.get("active") and not o.get("paused")
                      and o.get("spent", 0) < o.get("budget", 0)]
-    ads = [a for a in portal_offers if a["id"] not in used_ids]
-    if not ads:
-        ads = portal_offers  # all seen today; cycle from the top
-    if not ads:
-        # Fallback: static ads.json (no portal offers configured).
-        static = [a for a in config.load_ads() if a["id"] not in used_ids]
-        if not static:
-            static = config.load_ads()
-        ads = static
-    if not ads:
+    if portal_offers:
+        return portal_offers
+    return [a for a in config.load_ads()
+            if a.get("active", True) and not a.get("paused", False)]
+
+
+# --- Decision-point detection (V1 heuristic) ---
+# An ad is eligible only when the agent's message is a FINAL answer
+# (finish_reason == "stop") AND it hands off to the user (a decision prompt)
+# AND at least one offer's intent tag appears in the decision text. The
+# finish_reason gate is what kills the narration noise: tool_calls turns are
+# mid-loop, never final, and so never qualify. Deterministic — no LLM judge.
+
+_HANDOFF_QUESTION = re.compile(r"\?\s*$")
+_HANDOFF_PHRASE = re.compile(
+    r"(which|what should|how should|do you want (me|to)|would you (like|rather)|"
+    r"shall i|want me to|your options|choose|pick (one|a|an)|please (let me know|choose|decide)|"
+    r"let me know|need your (input|decision|call)|i need you to (decide|choose)|"
+    r"would (you|that) work|does that (work|sound|look)|how (does|about) this)",
+    re.I)
+
+
+def _is_handoff(text):
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _HANDOFF_QUESTION.search(t):
+        return True
+    return bool(_HANDOFF_PHRASE.search(t))
+
+
+def _offer_intents(offer):
+    raw = offer.get("intents", offer.get("tags", []))
+    return [str(k).strip().lower() for k in raw if str(k).strip()]
+
+
+def _intent_score(offer, text):
+    """Deterministic topic match: how many of the offer's intent tags appear
+    in the decision text. 0 = no match (not eligible)."""
+    tl = (text or "").lower()
+    return sum(1 for kw in _offer_intents(offer) if kw and kw in tl)
+
+
+def _best_offer_for(text):
+    """Best topic-matching active offer; tie-break by id. None if nothing
+    matches the decision text (no ad shown)."""
+    scored = [(_intent_score(o, text), o["id"], o) for o in _active_offers()]
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    best = scored[0] if scored else None
+    if not best or best[0] <= 0:
         return None
-    ads.sort(key=lambda a: a["id"])
-    return ads[0]
+    return best[2]
 
 
 def _human_payload(ad):
-    """The disclosed, human-facing 'brought to you by' payload.
-
-    This rides on the response for the human to see — it is never fed into the
-    model, so it costs no tokens and never influences inference."""
+    """The disclosed, human-facing sponsorship payload. Rides on the response
+    for the human to see — never fed into the model, so it costs no tokens."""
     sponsor = ad.get("advertiser") or ad.get("sponsor") or "Sponsor"
     return {
         "type": "sponsored",
@@ -80,27 +112,45 @@ def _human_payload(ad):
         "headline": ad.get("headline", ""),
         "body": ad.get("body", ""),
         "claim": ad.get("claim", ""),
+        "image_url": ad.get("image_url", ""),
+        "link": ad.get("link", ""),
         "offer_id": ad["id"],
-        "message": f"Brought to you by {sponsor} — {ad.get('headline', '')}.",
+        "message": f"Sponsor: {sponsor} — {ad.get('headline', '')}.",
         "disclosed": True,
     }
 
 
-def _should_show_ad(user_id):
-    state = config.load_state()
-    today = _today()
-    day = state.setdefault(user_id, {})
-    shown = day.get("date") == today and day.get("count", 0)
-    if shown >= config.ADS_PER_DAY:
-        return False, state, None
-    used = day.get("used", [])
-    offer = _pick_offer(used)
-    if not offer:
-        return False, state, None
-    day["count"] = shown + 1
-    day["used"] = used + [offer["id"]]
-    day["date"] = today
-    return True, state, offer
+def _footer_text(ad):
+    """The block appended BELOW the model's answer, cleanly delimited by --- so
+    the model content above the line stays untouched and honest."""
+    sponsor = ad.get("advertiser") or ad.get("sponsor") or "Sponsor"
+    lines = ["", "---", f"Sponsor: {sponsor} — {ad.get('headline', '')}"]
+    if ad.get("body"):
+        lines.append(ad["body"])
+    if ad.get("claim"):
+        lines.append(f"Claim: {ad['claim']}")
+    if ad.get("image_url"):
+        lines.append(f"![{sponsor}]({ad['image_url']})")
+    if ad.get("link"):
+        lines.append(f"[Learn more]({ad['link']})")
+    return "\n".join(lines) + "\n"
+
+
+def _words(s):
+    return len((s or "").split())
+
+
+def _prompt_tokens(body):
+    n = 0
+    for m in body.get("messages", []):
+        c = m.get("content")
+        if isinstance(c, str):
+            n += len(c.split())
+        elif isinstance(c, list):
+            for p in c:
+                if isinstance(p, dict) and p.get("text"):
+                    n += len(str(p["text"]).split())
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +213,13 @@ async def chat_completions(request: Request):
 
     body = await request.json()
     stream = bool(body.get("stream", False))
+    uid = user_id
+    model = body.get("model", "guac")
 
-    show_ad, state, offer = _should_show_ad(user_id)
-    config.save_state(state)
-
-    # V1: we do NOT inject anything into the model. The request forwards
-    # unchanged. The sponsored "brought to you by" payload rides on the response.
+    # V1 (decision-point): we do NOT inject anything into the model. The
+    # request forwards unchanged; a sponsorship is appended BELOW the answer
+    # only when the answer is a final turn that hands off to the user AND an
+    # offer's intent matches the decision text.
 
     # Forward to the best healthy supplier, with failover across the pool.
     headers = {"content-type": "application/json"}
@@ -185,25 +236,85 @@ async def chat_completions(request: Request):
         # Model routing: if the supplier pins a model and the client asked for
         # a generic/guac model, substitute the supplier's real model slug.
         sup_body = body
-        if supplier.model and body.get("model", "").lower() in ("guac", "default", ""):
+        if supplier.model and model.lower() in ("guac", "default", ""):
             sup_body = dict(body)
             sup_body["model"] = supplier.model
         t0 = time.monotonic()
         try:
-            # Streaming: keep the client alive for the whole generator, and
-            # record quality only after the stream completes (a 200 header with
-            # a truncated body is a failure). Non-stream: simple post.
             if stream:
                 async def gen():
                     async with httpx.AsyncClient(timeout=120) as client:
                         req = client.build_request("POST", upstream, headers=sup_headers, json=sup_body)
                         resp = await client.send(req, stream=True)
-                        ok = True
                         nbytes = 0
+                        buf = b""
+                        parts = []
+                        finish = None
+                        done_event = None
                         try:
                             async for chunk in resp.aiter_bytes():
                                 nbytes += len(chunk)
-                                yield chunk
+                                buf += chunk
+                                # Emit complete SSE events, holding [DONE] until
+                                # we know whether to append the footer.
+                                while True:
+                                    idx = buf.find(b"\n\n")
+                                    if idx == -1:
+                                        break
+                                    event = buf[:idx]
+                                    buf = buf[idx + 2:]
+                                    line = event.decode("utf-8", errors="replace")
+                                    if not line.startswith("data:"):
+                                        yield event + b"\n\n"
+                                        continue
+                                    payload = line[5:].strip()
+                                    if payload == "[DONE]":
+                                        done_event = event + b"\n\n"
+                                        continue
+                                    try:
+                                        evt = json.loads(payload)
+                                    except Exception:
+                                        yield event + b"\n\n"
+                                        continue
+                                    for ch in evt.get("choices", []):
+                                        c = ch.get("delta", {}).get("content")
+                                        if c:
+                                            parts.append(c)
+                                        fr = ch.get("finish_reason")
+                                        if fr:
+                                            finish = fr
+                                    yield event + b"\n\n"
+                            if buf:
+                                yield buf
+                            # Now the full answer is known: decide the footer.
+                            full = "".join(parts)
+                            offer = None
+                            if finish == "stop" and _is_handoff(full):
+                                offer = _best_offer_for(full)
+                            sponsor = None
+                            impression_cost = 0.0
+                            if offer:
+                                sponsor = offer.get("advertiser") or offer.get("sponsor")
+                                _o, impression_cost = portal.charge_impression(offer["id"])
+                                footer = _footer_text(offer)
+                                fe = {"id": "cmpl-guac", "object": "chat.completion.chunk",
+                                      "created": 0, "model": model,
+                                      "choices": [{"index": 0, "delta": {"content": footer},
+                                                   "finish_reason": None}]}
+                                yield f"data: {json.dumps(fe)}\n\n".encode()
+                            config.log_ledger({
+                                "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                                "user": uid,
+                                "sponsored": offer is not None,
+                                "sponsor": sponsor,
+                                "impression_cost": impression_cost,
+                                "supplier": chosen.name,
+                                "prompt_tokens": _prompt_tokens(body),
+                                "completion_tokens": _words(full),
+                                "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
+                            })
+                            if done_event:
+                                yield done_event
                         finally:
                             ok = (resp.status_code == 200 and nbytes > 0)
                             supplier.record(ok, (time.monotonic() - t0) * 1000)
@@ -234,38 +345,43 @@ async def chat_completions(request: Request):
         return JSONResponse({"error": {"message": "no healthy suppliers available"}},
                             status_code=503)
 
-    # Meter + settle.
+    # Non-streaming: meter, settle, and (maybe) append the footer below the answer.
     usage = data.get("usage", {})
     prompt_tk = usage.get("prompt_tokens", 0)
     completion_tk = usage.get("completion_tokens", 0)
+    content = data["choices"][0]["message"].get("content", "")
+    finish = data["choices"][0].get("finish_reason")
+
+    offer = None
+    if finish == "stop" and _is_handoff(content):
+        offer = _best_offer_for(content)
+
     sponsor = None
     impression_cost = 0.0
-    if show_ad and offer:
+    if offer:
         sponsor = offer.get("advertiser") or offer.get("sponsor")
         # Per-impression billing: record one delivered impression against the
         # offer, capturing the actual amount charged so settlement can compute
         # real ad revenue (not a hardcoded per-offer estimate).
-        if "advertiser" in offer:
-            _o, impression_cost = portal.charge_impression(offer["id"])
-    config.log_ledger({
-        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-        "user": user_id,
-        "sponsored": show_ad,
-        "sponsor": sponsor,
-        "impression_cost": impression_cost,
-        "supplier": chosen.name,
-        "prompt_tokens": prompt_tk,
-        "completion_tokens": completion_tk,
-        "discount_rate": config.DISCOUNT_RATE if show_ad else 0.0,
-    })
-
-    # Tag the response so the human can see the disclosed sponsorship.
-    if show_ad and offer:
+        _o, impression_cost = portal.charge_impression(offer["id"])
+        # Append the disclosed footer BELOW the model answer, delimited by ---.
+        data["choices"][0]["message"]["content"] = content + _footer_text(offer)
         data["guac"] = {
             "sponsored": True,
             "discount_rate": config.DISCOUNT_RATE,
             "sponsorship": _human_payload(offer),
         }
+    config.log_ledger({
+        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "user": uid,
+        "sponsored": offer is not None,
+        "sponsor": sponsor,
+        "impression_cost": impression_cost,
+        "supplier": chosen.name,
+        "prompt_tokens": prompt_tk,
+        "completion_tokens": completion_tk,
+        "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
+    })
     return JSONResponse(data)
 
 
@@ -336,6 +452,9 @@ async def create_advertiser_offer(request: Request):
     claim = (body.get("claim") or "").strip()
     budget = body.get("budget")
     offer_type = (body.get("offer_type") or "discount").strip()
+    intents = body.get("intents", [])
+    image_url = (body.get("image_url") or "").strip()
+    link = (body.get("link") or "").strip()
     if not (headline and budget):
         return JSONResponse({"error": {"message": "headline, budget required"}},
                             status_code=400)
@@ -343,7 +462,8 @@ async def create_advertiser_offer(request: Request):
         budget = float(budget)
     except (TypeError, ValueError):
         return JSONResponse({"error": {"message": "budget must be a number"}}, status_code=400)
-    offer = portal.create_offer(advertiser_email, headline, body_txt, claim, budget, offer_type)
+    offer = portal.create_offer(advertiser_email, headline, body_txt, claim, budget,
+                                offer_type, intents, image_url, link)
     return {"offer_id": offer["id"], "budget": offer["budget"], "status": "created"}
 
 
@@ -401,6 +521,18 @@ async def backup_endpoint(request: Request):
     if api_key != config.GATEWAY_KEY:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     return backup.build_bundle()
+
+
+@app.get("/pitch")
+def pitch():
+    """The advertiser pitch, served as readable HTML for the portal."""
+    path = config.BASE / "docs" / "ADVERTISER_PITCH.md"
+    if not path.exists():
+        return JSONResponse({"error": "pitch not found"}, status_code=404)
+    return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
+                        "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
+                        "color:#e6e8ee;background:#0b0e14;'>"
+                        + html.escape(path.read_text()) + "</pre>")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -626,6 +758,9 @@ async def portal_advertiser_offer(request: Request):
     body_txt = (form.get("body") or "").strip()
     claim = (form.get("claim") or "").strip()
     offer_type = (form.get("offer_type") or "discount").strip()
+    intents = [k.strip() for k in (form.get("intents") or "").split(",") if k.strip()]
+    image_url = (form.get("image_url") or "").strip()
+    link = (form.get("link") or "").strip()
     adv = portal.get_advertiser(email)
     if not adv:
         return portal_html.advertiser_login_form(error="Not logged in")
@@ -638,7 +773,8 @@ async def portal_advertiser_offer(request: Request):
     if not headline or budget <= 0:
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                                 error="Headline and positive budget required")
-    offer = portal.create_offer(email, headline, body_txt, claim, budget, offer_type)
+    offer = portal.create_offer(email, headline, body_txt, claim, budget, offer_type,
+                                intents, image_url, link)
     return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                             created=offer["headline"])
 

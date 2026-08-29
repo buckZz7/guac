@@ -69,9 +69,11 @@ def main():
 
         c = httpx.Client(base_url=GW, headers={"authorization": f"Bearer {KEY}",
                                                "x-user-id": "carol"})
-        payload = {"model": "stub", "messages": [
+        payload = {"model": "stub",
+                   "_stub_content": "Which hosting plan should I recommend?",
+                   "messages": [
             {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "suggest a host"}]}
+            {"role": "user", "content": "help me choose a host"}]}
 
         # 1) request routes to primary
         r1 = c.post("/v1/chat/completions", json=payload)

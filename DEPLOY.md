@@ -67,13 +67,13 @@ One free Fly.io account, signed in at https://fly.io.
 ## Using it
 
 **Portal (recommended)** — self-serve web UI at `https://<app>.fly.dev/portal`:
-- Users: magic-link login, view/re-copy API key + base_url, adjust ads/day
-- Advertisers: magic-link login, ad manager (create/pause/toggle offers), per-impression billing
+- Users: magic-link login, view/re-copy API key + base_url
+- Advertisers: magic-link login, ad manager (create offers with intents/image/link, pause/toggle, per-impression billing)
 
 **Users sign up** (API):
 ```
 POST https://<app>.fly.dev/signup
-{"email": "you@example.com", "ads_per_day": 1}
+{"email": "you@example.com"}
 ```
 → returns `{ "api_key": "guac_...", "base_url": "https://<app>.fly.dev/v1" }`
 
@@ -91,8 +91,9 @@ POST https://<app>.fly.dev/advertiser/offer
 ```
 Stats: `GET https://<app>.fly.dev/advertiser/stats`
 
-**Daily sponsorship delivery** — run `daily.py` once a day (e.g. a cron job) to
-emit the "brought to you by" message for a user, and deliver it to their Telegram.
+**Sponsorship delivery** — the gateway appends a disclosed `Sponsor:` footer
+below an answer automatically, at a decision point (final answer + handoff +
+topic match). No cron, no separate delivery — it rides on the response itself.
 
 ## Gotchas
 

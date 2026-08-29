@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""End-to-end test: guac surfaces one human-facing 'brought to you by'
-sponsorship per user per day (on the response, not the model), meters tokens,
-and applies the discount; second request the same day is NOT sponsored."""
+"""End-to-end test for guac V1 decision-point sponsorship.
+
+V1 shows a sponsorship footer ONLY when the agent's answer is a FINAL turn
+(finish_reason == "stop") that HANDS OFF to the user AND an offer's intent tag
+matches the decision text. No per-day frequency. The footer is appended BELOW
+the answer, delimited by ---, so the model content above it is byte-identical.
+"""
 import json
 import subprocess
 import sys
 import time
 import os
+import tempfile
 
 import httpx
 
@@ -15,10 +20,11 @@ PY = os.path.join(ROOT, "..", ".venv", "bin", "python")
 GATEWAY = "http://127.0.0.1:8000"
 KEY = "dev-gateway-key"
 
+
 def start(cmd):
-    p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
-    return p
+    return subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+
 
 def wait_ok(url, tries=30):
     for _ in range(tries):
@@ -30,15 +36,32 @@ def wait_ok(url, tries=30):
         time.sleep(0.5)
     return False
 
+
+def sse_footer_present(body: bytes) -> bool:
+    """True if the stream carried a footer content-delta before [DONE]."""
+    footer = False
+    for line in body.decode("utf-8", errors="replace").splitlines():
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            evt = json.loads(payload)
+        except Exception:
+            continue
+        c = (evt.get("choices") or [{}])[0].get("delta", {}).get("content", "")
+        if "Sponsor:" in c:
+            footer = True
+    return footer
+
+
 def main():
-    # clean state
-    for f in ("state.json", "ledger.jsonl"):
+    for f in ("ledger.jsonl", "state.json"):
         p = os.path.join(ROOT, f)
         if os.path.exists(p):
             os.remove(p)
 
-    # temp suppliers file -> local stub, so the test is hermetic
-    import tempfile
     td = tempfile.mkdtemp()
     sup = {"suppliers": [
         {"name": "stub", "base_url": "http://127.0.0.1:8001/v1", "bid": 1.0,
@@ -52,6 +75,8 @@ def main():
     env = dict(os.environ)
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_GATEWAY_KEY"] = KEY
+    # Hermetic: no portal offers -> gateway falls back to ads.json (has intents).
+    env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8000"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -61,63 +86,90 @@ def main():
         client = httpx.Client(base_url=GATEWAY,
                               headers={"authorization": f"Bearer {KEY}",
                                        "x-user-id": "alice"})
-        payload = {"model": "stub", "messages": [
+
+        def post(body):
+            return client.post("/v1/chat/completions", json={**base, **body})
+
+        base = {"model": "stub", "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Find me a cheap hosting plan"},
+            {"role": "user", "content": "Help me choose."},
         ]}
 
-        # 1st request today -> sponsored (human-facing)
-        r1 = client.post("/v1/chat/completions", json=payload)
-        assert r1.status_code == 200, r1.text
-        d1 = r1.json()
-        sponsored = d1.get("guac", {}).get("sponsored", False)
-        print("REQ1 sponsored:", sponsored)
-        if not sponsored:
-            print("  content:", d1["choices"][0]["message"]["content"])
-        else:
-            sp = d1["guac"]["sponsorship"]
-            # the human-facing payload rides the response...
-            assert sp["type"] == "sponsored"
-            assert "Brought to you by" in sp["message"]
-            assert sp["disclosed"] is True
-            # ...and is NOT injected into the model (proves inference untouched)
-            content = d1["choices"][0]["message"]["content"]
-            assert "Brought to you by" not in content, "ad leaked into model!"
-            print("  human payload:", sp["message"])
-            print("  model content untouched:", repr(content))
-        # 2nd request same day -> NOT sponsored
-        r2 = client.post("/v1/chat/completions", json=payload)
-        d2 = r2.json()
-        sponsored2 = d2.get("guac", {}).get("sponsored", False)
-        print("REQ2 sponsored:", sponsored2)
-        assert sponsored and not sponsored2, "ad cadence wrong"
+        # 1) FINAL + handoff + hosting topic -> sponsored footer
+        r = post({"_stub_content": "Which hosting plan should I recommend for you?"})
+        assert r.status_code == 200, r.text
+        d = r.json()
+        full = d["choices"][0]["message"]["content"]
+        model_part, _, footer = full.partition("\n---\n")
+        assert d["guac"]["sponsored"] is True
+        assert model_part == "Which hosting plan should I recommend for you?", \
+            f"model content altered: {model_part!r}"
+        assert "Sponsor: Acme Cloud Hosting" in footer
+        assert "acme-hosting.png" in footer          # image render
+        assert "acme.example.com/agent" in footer    # link render
+        assert d["guac"]["sponsorship"]["disclosed"] is True
+        print("REQ1 non-stream sponsored ✓  model content byte-identical above ---")
 
-        # streaming path must actually stream bytes (regression: it used to
-        # return 200 with 0 bytes because the client closed before the generator)
+        # 2) FINAL + no handoff (plain statement) -> NOT sponsored
+        r = post({"_stub_content": "Here is the weather forecast for today."})
+        d = r.json()
+        assert not d.get("guac", {}).get("sponsored"), "statement should not be sponsored"
+        assert "Sponsor:" not in d["choices"][0]["message"]["content"]
+        print("REQ2 no-handoff statement -> no ad ✓")
+
+        # 3) FINAL + handoff but no topic match -> NOT sponsored
+        r = post({"_stub_content": "Would you like me to recommend a recipe?"})
+        d = r.json()
+        assert not d.get("guac", {}).get("sponsored"), "no intent match should not sponsor"
+        assert "Sponsor:" not in d["choices"][0]["message"]["content"]
+        print("REQ3 handoff but no topic match -> no ad ✓")
+
+        # 4) STREAM: final + handoff + match -> footer before [DONE]
         with client.stream("POST", "/v1/chat/completions",
-                           json={**payload, "stream": True}) as rs:
+                           json={**base, "stream": True,
+                                 "_stub_content": "Which vector database fits my project?",
+                                 "_stub_finish": "stop"}) as rs:
             assert rs.status_code == 200, rs.status_code
             body = b"".join(rs.iter_bytes())
-        assert len(body) > 0, "streaming returned 0 bytes (client closed early?)"
-        print("streaming returned bytes:", len(body), "> 0 ✓")
+        assert len(body) > 0, "streaming returned 0 bytes"
+        assert sse_footer_present(body), "stream should carry the footer before [DONE]"
+        assert b'data: [DONE]' in body
+        print("REQ4 stream final+handoff+match -> footer before [DONE] ✓")
 
+        # 5) STREAM: mid-loop (finish_reason=tool_calls) -> NO footer
+        with client.stream("POST", "/v1/chat/completions",
+                           json={**base, "stream": True,
+                                 "_stub_content": "Let me look that up.",
+                                 "_stub_finish": "tool_calls"}) as rs:
+            body = b"".join(rs.iter_bytes())
+        assert not sse_footer_present(body), "mid-loop tool_calls must NOT carry an ad"
+        assert b'data: [DONE]' in body
+        print("REQ5 stream mid-loop (tool_calls) -> no ad ✓")
 
-        # ledger got two rows, one sponsored with discount
+        # ledger: REQ1 (non-stream, hosting) + REQ4 (stream, vector) sponsored;
+        # REQ2, REQ3, REQ5 non-sponsored. 5 rows total.
         with open(os.path.join(ROOT, "ledger.jsonl")) as f:
             rows = [json.loads(l) for l in f if l.strip()]
-        print("LEDGER rows:", len(rows))
-        assert len(rows) == 2
-        assert rows[0]["sponsored"] is True and rows[0]["discount_rate"] == 0.20
-        assert rows[1]["sponsored"] is False and rows[1]["discount_rate"] == 0.0
-        assert rows[0]["prompt_tokens"] > 0
+        sponsored = [r for r in rows if r["sponsored"]]
+        non_sponsored = [r for r in rows if not r["sponsored"]]
+        assert len(rows) == 5, f"expected 5 ledger rows, got {len(rows)}"
+        assert len(sponsored) == 2, f"expected 2 sponsored rows, got {len(sponsored)}"
+        assert len(non_sponsored) == 3, f"expected 3 non-sponsored rows, got {len(non_sponsored)}"
+        assert sponsored[0]["sponsor"] == "Acme Cloud Hosting"
+        assert sponsored[1]["sponsor"] == "Nimbus Data"
+        assert sponsored[0]["discount_rate"] == 0.20
+        print(f"LEDGER: {len(sponsored)} sponsored, {len(non_sponsored)} non-sponsored ✓")
 
         print("\nALL TESTS PASSED")
-        print("  - human-facing 'brought to you by' on request 1, none on request 2 (1/day)")
-        print("  - the sponsored payload rides the response, never the model")
-        print("  - tokens metered, discount 20% applied on sponsored request")
-        print("  - offer disclosed in response guac block")
+        print("  - footer appended below '---' only at final+handoff+match")
+        print("  - model content above '---' byte-identical (inference untouched)")
+        print("  - no ad on plain statements, off-topic handoffs, or mid-loop turns")
+        print("  - streamed footer injected before [DONE]")
+        print("  - discount + impression still settled on sponsored rows")
     finally:
-        stub.kill(); gw.kill()
+        stub.kill()
+        gw.kill()
+
 
 if __name__ == "__main__":
     main()

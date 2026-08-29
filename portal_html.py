@@ -53,8 +53,10 @@ def landing():
     <div class="row">
       <div class="col">
         <h2>I'm an agent user</h2>
-        <p>Opt in to see a couple of sponsored messages a day and pay less
-        for inference. Sign up or log back in with your email.</p>
+        <p>Point your agent at guac and pay less for inference. A disclosed
+        sponsor shows up below the answer only at a real decision point — never
+        on plain answers, never in the model. Sign up or log back in with your
+        email.</p>
         <form method="post" action="/portal/user/login">
           <input type="email" name="email" placeholder="you@example.com" required>
           <button type="submit">Get my API key</button>
@@ -62,12 +64,14 @@ def landing():
       </div>
       <div class="col">
         <h2>I'm an advertiser</h2>
-        <p>Create and manage offers, set a budget, and see impressions and
-        clicks in real time. Per-impression billing.</p>
+        <p>Put your offer in front of someone at the exact moment they're
+        choosing in your category. Create offers, set a budget, and see
+        impressions and clicks in real time. Per-impression billing.</p>
         <form method="post" action="/portal/advertiser/login">
           <input type="email" name="email" placeholder="you@company.com" required>
           <button type="submit">Open my ad manager</button>
         </form>
+        <p class="meta"><a href="/pitch">Read the advertiser pitch</a></p>
       </div>
     </div>
     """
@@ -87,8 +91,7 @@ def user_login_form(email=None, magic_link=None, error=None):
     <a href="/portal" class="meta">← back</a>
     <div class="card">
       <h2>Enter your email</h2>
-      <p class="meta">We'll send you a magic link to view your API key and
-      adjust how many sponsored messages you see per day.</p>
+      <p class="meta">We'll send you a magic link to view your API key.</p>
       {flash}
       <form method="post" action="/portal/user/login">
         <input type="email" name="email" placeholder="you@example.com"
@@ -114,14 +117,8 @@ def user_dashboard(user, savings):
     </div>
     <div class="card">
       <h2>Sponsored messages per day</h2>
-      <p class="meta">More offers = bigger discount.</p>
-      <form method="post" action="/portal/user/settings">
-        <input type="hidden" name="email" value="{_html.escape(user['email'])}">
-        <label>Ads per day (1 / 5 / 10)</label>
-        <input type="number" name="ads_per_day" min="1" max="10"
-               value="{user['ads_per_day']}" required>
-        <button type="submit">Save</button>
-      </form>
+      <p class="meta">No frequency choice — a disclosed sponsor shows up below
+      the answer only at a real decision point, and it funds your discount.</p>
     </div>
     <div class="card">
       <h2>Your savings</h2>
@@ -196,9 +193,15 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None):
           <option value="trial">Free trial</option>
           <option value="sponsorship">Sponsorship</option>
         </select>
+        <input type="text" name="intents" placeholder="Intents (comma-sep topics), e.g. hosting, deploy">
+        <input type="text" name="image_url" placeholder="Image URL (optional creative)">
+        <input type="text" name="link" placeholder="Link (optional, e.g. https://.../agent)">
         <button type="submit">Create offer</button>
       </form>
-      <p class="meta">You're billed per impression (${config.IMPRESSION_COST:.2f} each). The offer auto-pauses when your budget is spent.</p>
+      <p class="meta">Intents gate <em>when</em> your offer can appear: it shows
+      only at a decision whose topic matches. You're billed per impression
+      (${config.IMPRESSION_COST:.2f} each); the offer auto-pauses when your
+      budget is spent. <a href="/pitch">How decision-point sponsorship works</a>.</p>
     </div>
     <div class="card">
       <h2>Your offers</h2>

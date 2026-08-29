@@ -23,10 +23,9 @@ primary_region = "sjc"
   # override env, and env here is committed to a public repo. Leaving it unset
   # means the gateway falls back to "dev-gateway-key", which is only safe for
   # a local/dev instance. Set a real key before going live.
-  ADGATE_ADS_PER_DAY = "1"
   ADGATE_DISCOUNT_RATE = "0.20"
   # Public host for sign-up so the returned base_url is correct (no 127.0.0.1).
-  ADGATE_PUBLIC_HOST = "https://guac-ivory-lagoon-3366.fly.dev"
+  ADGATE_PUBLIC_HOST = "https://addguac.fly.dev"
 
 [http_service]
   internal_port = 8080

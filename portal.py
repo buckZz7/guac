@@ -224,8 +224,11 @@ def _save_offers(offers):
     _write_json(config.OFFERS_FILE, offers)
 
 
-def create_offer(advertiser_email, headline, body, claim, budget, offer_type="discount"):
-    """Create an advertiser offer. budget = max impressions (per-impression)."""
+def create_offer(advertiser_email, headline, body, claim, budget, offer_type="discount",
+                 intents=None, image_url="", link=""):
+    """Create an advertiser offer. budget = max impressions (per-impression).
+    intents: list of topic keywords that gate when the offer can appear
+    (decision-point matching). image_url/link: creative for the footer."""
     def _apply(offers):
         oid = "sponsor-" + secrets.token_hex(4)
         offer = {
@@ -235,8 +238,11 @@ def create_offer(advertiser_email, headline, body, claim, budget, offer_type="di
             "body": body,
             "claim": claim,
             "offer_type": offer_type,
+            "intents": [str(k).strip() for k in (intents or []) if str(k).strip()],
+            "image_url": image_url,
+            "link": link,
             "budget": float(budget),
-            "impressions": 0,          # delivered "brought to you by" count
+            "impressions": 0,          # delivered sponsorships count
             "spent": 0.0,
             "active": True,
             "paused": False,
