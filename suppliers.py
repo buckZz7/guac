@@ -28,7 +28,8 @@ RECOVERY_COOLDOWN_S = 300.0
 
 class Supplier:
     def __init__(self, name, base_url, key="", bid=1.0, min_score=0.0,
-                 warmup_successes=1, model=None, key_env=None, passthrough=False):
+                 warmup_successes=1, model=None, key_env=None, passthrough=False,
+                 discount=None):
         self.name = name
         self.base_url = base_url.rstrip("/")
         # key can be given directly, or loaded from an env var by name.
@@ -42,6 +43,9 @@ class Supplier:
         # this supplier (any model the provider offers). Non-passthrough
         # suppliers only ever serve their pinned model.
         self.passthrough = bool(passthrough)
+        # Per-supplier discount override (fraction off, 0.0 = no discount).
+        # None means "use the global default"; a number wins over it.
+        self.discount = discount
         # runtime stats (also persisted via pool.save_state)
         self.successes = 0
         self.failures = 0
@@ -129,7 +133,8 @@ class Supplier:
                 d.get("bid", 1.0), d.get("min_score", 0.0),
                 d.get("warmup_successes", 1),
                 d.get("model"), d.get("key_env"),
-                passthrough=d.get("passthrough", False))
+                passthrough=d.get("passthrough", False),
+                discount=d.get("discount"))
         s.successes = d.get("successes", 0)
         s.failures = d.get("failures", 0)
         s.total_latency_ms = d.get("total_latency_ms", 0.0)

@@ -270,10 +270,11 @@ def marketing_home(stats=None):
     body = f"""
 <div class="hero">
   <span class="eyebrow">Inference, sponsored</span>
-  <h1>Every token, {_DISCOUNT_PCT}% off.<br><span class="accent">Sponsors fund the discount.</span></h1>
-  <p class="lede">Point your agent at one URL. Every request is billed {int(config.DISCOUNT_RATE*100)}%
-  under market price — sponsored answer or not. A few answers a day carry a disclosed
-  sponsor below them; that ad revenue is what keeps your rate low. The model output itself is never touched.</p>
+  <h1>Top models, up to {_DISCOUNT_PCT}% off.<br><span class="accent">Sponsors fund the discount.</span></h1>
+  <p class="lede">Point your agent at one URL. Each model on the menu is billed below market
+  price — the discount is set per model, up to {_DISCOUNT_PCT}%, sponsored answer or not. A few
+  answers a day carry a disclosed sponsor below them; that ad revenue is what keeps your rate
+  low. The model output itself is never touched.</p>
   <div class="cta">
     <a class="btn btn-primary" href="/portal">Get my API key</a>
     <a class="btn btn-ghost" href="#how">How it works</a>
@@ -289,8 +290,8 @@ def marketing_home(stats=None):
     <div class="steps">
       <div class="step"><span class="num">01</span><h3>Top up &amp; connect</h3>
         <p>Get an API key and base URL. Point Hermes, Codex, OpenClaw — any OpenAI-compatible client — at it.</p></div>
-      <div class="step"><span class="num">02</span><h3>Billed at the discounted rate</h3>
-        <p>Every request charges {int(config.DISCOUNT_RATE*100)}% less than the market price — always. No markup, no subscription, no surprises.</p></div>
+      <div class="step"><span class="num">02</span><h3>Billed below market</h3>
+        <p>Every request is charged at that model's discounted rate — set per model, always under market. No markup, no subscription, no surprises.</p></div>
       <div class="step"><span class="num">03</span><h3>Sponsors fund the discount</h3>
         <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That ad revenue is what pays for your below-market rate.</p></div>
     </div>
@@ -317,12 +318,12 @@ def marketing_home(stats=None):
 <section id="pricing" style="padding-top:0">
   <div class="container">
     <div class="sec-head"><span class="kicker">Pricing</span>
-      <h2>Below market price. On every request.</h2></div>
+      <h2>Below market price. Set per model.</h2></div>
     <div class="grid">
-      <div class="card"><span class="ic">{_icon('tag')}</span><h3>Market price minus {_DISCOUNT_PCT}%</h3>
-        <p>Each request is metered and billed at the market rate for those tokens, minus the discount. Frontier models price off the provider's real cost.</p></div>
+      <div class="card"><span class="ic">{_icon('tag')}</span><h3>A discount menu, not one rate</h3>
+        <p>Each model has its own discount off the market rate — quality-gated pools carry the biggest cuts. Every request is metered at that model's price.</p></div>
       <div class="card"><span class="ic">{_icon('gift')}</span><h3>Discounted whether sponsored or not</h3>
-        <p>You don't earn credits or wait for ads. The discount is in your rate — every request, every model. Sponsors are simply what makes it sustainable.</p></div>
+        <p>You don't earn credits or wait for ads. The discount is in your rate — every request. Sponsors are simply what makes it sustainable.</p></div>
       <div class="card"><span class="ic">{_icon('eye')}</span><h3>Every cent visible</h3>
         <p>Your dashboard shows your balance, what you've spent, and what you've saved vs market price. The ledger is append-only and auditable.</p></div>
     </div>
@@ -365,9 +366,9 @@ def marketing_home(stats=None):
     <div class="sec-head"><span class="kicker">FAQ</span><h2>Questions</h2></div>
     <div class="faq">
       <details><summary>Do ads go inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked "Sponsor".</p></details>
-      <details><summary>How does the discount actually work?</summary><p>Your rate is the market price minus our discount, on every request. Advertisers pay for disclosed sponsorships below a few answers a day; that revenue funds the gap between your price and market price. You never see a full-price bill.</p></details>
-      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The same discounted rate as always. The discount isn't tied to seeing an ad — it's in your price on every request.</p></details>
-      <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through, plus quality-gated open-model pools.</p></details>
+      <details><summary>How does the discount actually work?</summary><p>Each model on the menu has a set discount off its market price, billed on every request. Advertisers pay for disclosed sponsorships below a few answers a day; that revenue funds the gap between your price and market price. Models without a discount are billed at market rate — the dashboard shows each model's price.</p></details>
+      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The same rate as always. The discount isn't tied to seeing an ad — it's built into each model's price.</p></details>
+      <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through at market rate, plus quality-gated open-model pools carrying discounts of up to {_DISCOUNT_PCT}%.</p></details>
       <details><summary>Which agents work with guac?</summary><p>Anything OpenAI-compatible: Hermes, Codex, OpenClaw, Aider, or a plain script. If it takes a base_url and an API key, it works.</p></details>
       <details><summary>Will I see ads all the time?</summary><p>No — a few a day at most, and only when an advertiser has funded inventory. No funded sponsor, no footer.</p></details>
     </div>
@@ -584,9 +585,9 @@ def user_dashboard(user, balance, spent, saved):
   </div>
   <div class="card" style="margin-bottom:20px">
     <h3>Top up your balance</h3>
-    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">Every request is billed at the
-      discounted rate — {int(config.DISCOUNT_RATE*100)}% under market price, always. Sponsors keep
-      that discount funded.</p>
+    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">Every request is billed at that
+      model's discounted rate — set per model, up to {int(config.DISCOUNT_RATE*100)}% under market.
+      Sponsors keep the discounts funded.</p>
     <form method="post" action="/user/topup">
       <input type="hidden" name="api_key" value="{_html.escape(user['api_key'])}">
       <input type="number" name="amount_cents" value="1000" min="100" step="100" style="max-width:160px">

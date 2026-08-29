@@ -258,10 +258,22 @@ def _billable_user(uid):
     return uid and uid != "master" and not uid.startswith("advertiser:")
 
 
-def _request_cost(supplier, body, usage, completion_words=None):
+def _resolve_discount(supplier, model):
+    """The discount for one request: explicit per-model entry wins, then the
+    serving supplier's discount field, then the global default. Per-model
+    discounts live in config.MODEL_DISCOUNTS; per-supplier in suppliers.json."""
+    d = config.MODEL_DISCOUNTS.get(model)
+    if d is not None:
+        return d
+    if supplier.discount is not None:
+        return supplier.discount
+    return config.DISCOUNT_RATE
+
+
+def _request_cost(supplier, body, usage, model, completion_words=None):
     """The USER's price for one request: the market rate for these tokens,
-    minus the discount. Users never see the full price — the discount is baked
-    into every bill, sponsored or not. Advertiser revenue funds the gap.
+    minus the discount resolved for THIS model/supplier. Users never see the
+    full price on a discounted model. Advertiser revenue funds the gap.
 
     Pinned suppliers: REFERENCE_PRICING (market $/M), discounted.
     Passthrough: the supplier-reported usage.cost when present (OpenRouter
@@ -271,7 +283,7 @@ def _request_cost(supplier, body, usage, completion_words=None):
     completion_tk = usage.get("completion_tokens", 0)
     if not completion_tk and completion_words:
         completion_tk = completion_words
-    keep = 1.0 - config.DISCOUNT_RATE
+    keep = 1.0 - _resolve_discount(supplier, model)
     price = config.REFERENCE_PRICING.get(supplier.name)
     if price:
         p_per_m, c_per_m = price
@@ -284,15 +296,16 @@ def _request_cost(supplier, body, usage, completion_words=None):
     return market * keep
 
 
-def _bill_user(uid, cost, model, supplier_name):
-    """Bill one request to the user's prepaid balance at the discounted rate.
-    Returns the bill dict recorded in the ledger. If the balance can't cover
-    it, the row is marked unpaid — the pre-flight gate 402s the NEXT request,
-    so at most one request rides slightly past the balance."""
+def _bill_user(uid, cost, model, supplier_name, discount_rate):
+    """Bill one request to the user's prepaid balance at the model's
+    discounted rate. Returns the bill dict recorded in the ledger. If the
+    balance can't cover it, the row is marked unpaid — the pre-flight gate
+    402s the NEXT request, so at most one request rides slightly past the
+    balance."""
     charged = payments.charge_request(uid, cost, note=f"{model} via {supplier_name}")
     return {
         "cost": round(cost, 8),          # what the user pays (already discounted)
-        "discount_rate": config.DISCOUNT_RATE,
+        "discount_rate": discount_rate,
         "unpaid": (not charged),
     }
 
@@ -489,10 +502,11 @@ async def chat_completions(request: Request):
                             # block, so cost is estimated from tokens).
                             bill = None
                             if _billable_user(billing_id):
-                                s_cost = _request_cost(chosen, body, {},
+                                s_cost = _request_cost(chosen, body, {}, model,
                                                        completion_words=_words(full))
                                 bill = _bill_user(billing_id, s_cost, model,
-                                                  chosen.name)
+                                                  chosen.name,
+                                                  _resolve_discount(chosen, model))
                             config.log_ledger({
                                 "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
                                 "user": uid,
@@ -565,9 +579,10 @@ async def chat_completions(request: Request):
             "sponsorship": _human_payload(offer),
         }
 
-    # Bill at the discounted rate — every request, sponsored or not.
-    cost = _request_cost(chosen, body, usage)
-    bill = _bill_user(billing_id, cost, model, chosen.name) \
+    # Bill at the model's discounted rate — every request, sponsored or not.
+    cost = _request_cost(chosen, body, usage, model)
+    bill = _bill_user(billing_id, cost, model, chosen.name,
+                      _resolve_discount(chosen, model)) \
         if _billable_user(billing_id) else None
     config.log_ledger({
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),

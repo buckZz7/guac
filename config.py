@@ -35,8 +35,9 @@ ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "3"))
 LATENCY_GRACE_MS = float(os.environ.get("ADGATE_LATENCY_GRACE_MS", "4000"))
 LATENCY_HARD_MS = float(os.environ.get("ADGATE_LATENCY_HARD_MS", "15000"))
 
-# The discount: users ALWAYS pay below market rate, on every request —
-# sponsored or not. Advertiser revenue funds the gap. 0.30 = 30% off.
+# The discount: users pay below market rate, on every request — sponsored or
+# not. Advertiser revenue funds the gap. Discounts are PER MODEL (see
+# MODEL_DISCOUNTS + supplier-level "discount" in suppliers.json). 0.30 = 30% off.
 DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.30"))
 
 # Per-impression advertiser billing: each delivered "brought to you by" costs
@@ -58,6 +59,15 @@ REFERENCE_PRICING = {
     "engy-sn53": (0.60, 2.20),
     "openrouter-paid": (0.25, 1.00),  # deepseek-chat-v3-0324 on OpenRouter
     "openrouter-free": (0.0, 0.0),
+}
+
+# Per-model discount overrides (model slug -> fraction off, 0.0-0.95).
+# Resolution order for each request: explicit model entry here > the serving
+# supplier's "discount" field > DISCOUNT_RATE. Frontier pass-through models
+# default to NO discount (supplier discount 0.0): guac pays full market for
+# them, so only models listed here get subsidized pricing.
+MODEL_DISCOUNTS = {
+    # "moonshotai/kimi-k2": 0.20,
 }
 
 # Serve the static ads.json demo inventory only when explicitly enabled.
