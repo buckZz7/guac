@@ -63,6 +63,17 @@ MAGIC_USED_FILE = Path(os.environ.get("ADGATE_MAGIC_USED_FILE",
 # off in production, or anyone who submits an email can log in as that user.
 DEV_MODE = os.environ.get("ADGATE_DEV_MODE", "1") == "1"
 
+# OAuth (GitHub / Google). When a provider's client id+secret are set, the
+# portal offers that sign-in button. Otherwise it falls back to magic-link.
+# Session cookie: signed with MAGIC_SECRET, short TTL.
+GITHUB_CLIENT_ID = os.environ.get("ADGATE_GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.environ.get("ADGATE_GITHUB_CLIENT_SECRET", "")
+GOOGLE_CLIENT_ID = os.environ.get("ADGATE_GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("ADGATE_GOOGLE_CLIENT_SECRET", "")
+# Public base for building OAuth redirect URLs (must match provider settings).
+OAUTH_BASE = os.environ.get("ADGATE_OAUTH_BASE", "")
+SESSION_TTL_S = int(os.environ.get("ADGATE_SESSION_TTL_S", "3600"))
+
 # Email delivery for magic links (required when DEV_MODE is off). SMTP config.
 # If SMTP_HOST is unset, login links are NOT delivered and the portal is
 # effectively closed — set these before going live.

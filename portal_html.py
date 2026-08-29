@@ -7,6 +7,7 @@ the response instead of emailing it.
 import html as _html
 
 import config
+import oauth
 import portal
 
 _CSS = """
@@ -35,6 +36,9 @@ th,td{text-align:left;padding:8px;border-bottom:1px solid #eee;font-size:.9rem}
 .flash{background:#fff8e1;border:1px solid #ffe082;padding:10px 14px;border-radius:6px;margin:12px 0}
 .error{background:#fdecea;border:1px solid #ef9a9a;padding:10px 14px;border-radius:6px;margin:12px 0}
 .btn-secondary{background:#fff;color:#0a7d5c;border:1px solid #0a7d5c}
+.btn-oauth{display:inline-block;background:#fff;color:#0a7d5c;border:1px solid #0a7d5c;
+  border-radius:6px;padding:10px 16px;text-decoration:none;font-weight:600;margin:4px 0}
+.oauth{margin:16px 0}
 """
 
 
@@ -60,6 +64,7 @@ def landing():
           <input type="email" name="email" placeholder="you@example.com" required>
           <button type="submit">Get my API key</button>
         </form>
+        <p class="meta"><a href="/auth/login?role=user">or sign in with GitHub / Google</a></p>
       </div>
       <div class="col">
         <h2>I'm an advertiser</h2>
@@ -70,7 +75,7 @@ def landing():
           <input type="email" name="email" placeholder="you@company.com" required>
           <button type="submit">Open my ad manager</button>
         </form>
-        <p class="meta"><a href="/pitch">Read the advertiser pitch</a></p>
+        <p class="meta"><a href="/auth/login?role=advertiser">or sign in with GitHub / Google</a> · <a href="/pitch">Read the advertiser pitch</a></p>
       </div>
     </div>
     <p class="meta" style="margin-top:2.5rem;border-top:1px solid #e3e3e3;padding-top:1rem">
@@ -79,6 +84,19 @@ def landing():
     </p>
     """
     return _page("guac", body)
+
+
+def _oauth_buttons(role):
+    """HTML for configured OAuth sign-in buttons."""
+    providers = oauth.providers_configured()
+    if not providers:
+        return ""
+    btns = []
+    for p in providers:
+        label = "GitHub" if p == "github" else "Google"
+        btns.append(f'<a class="btn-oauth" href="/auth/start/{p}?role={role}">'
+                    f'Continue with {label}</a>')
+    return ('<div class="oauth"><p class="meta">or</p>' + "<br>".join(btns) + "</div>")
 
 
 def user_login_form(email=None, magic_link=None, error=None, emailed=False):
@@ -96,6 +114,7 @@ def user_login_form(email=None, magic_link=None, error=None, emailed=False):
     body = f"""
     <h1>User portal</h1>
     <a href="/portal" class="meta">← back</a>
+    {_oauth_buttons("user")}
     <div class="card">
       <h2>Enter your email</h2>
       <p class="meta">We'll send you a magic link to view your API key.</p>
@@ -108,6 +127,22 @@ def user_login_form(email=None, magic_link=None, error=None, emailed=False):
     </div>
     """
     return _page("User portal · guac", body)
+
+
+def oauth_login(role, providers):
+    """Standalone OAuth sign-in chooser page."""
+    body = f"""
+    <h1>Sign in</h1>
+    <a href="/portal" class="meta">← back</a>
+    <div class="card">
+      <h2>Continue with</h2>
+      {_oauth_buttons(role)}
+      <p class="meta" style="margin-top:12px">
+        <a href="/portal/{'user' if role=='user' else 'advertiser'}/login">or use email</a>
+      </p>
+    </div>
+    """
+    return _page("Sign in · guac", body)
 
 
 def user_dashboard(user, savings):
@@ -155,6 +190,7 @@ def advertiser_login_form(email=None, magic_link=None, error=None, emailed=False
     body = f"""
     <h1>Advertiser portal</h1>
     <a href="/portal" class="meta">← back</a>
+    {_oauth_buttons("advertiser")}
     <div class="card">
       <h2>Enter your email</h2>
       <p class="meta">We'll send you a magic link to open your ad manager.</p>

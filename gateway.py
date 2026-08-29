@@ -25,6 +25,7 @@ import httpx
 import config
 import limits
 import mailer
+import oauth
 import payments
 from suppliers import load_pool
 import portal
@@ -867,6 +868,108 @@ def _magic_link_for(role, email):
     token = portal.make_magic_token(role, email)
     host = config.PUBLIC_HOST or "http://127.0.0.1:8000"
     return f"{host.rstrip('/')}/portal/{role}/auth?token={token}"
+
+
+def _cookie(request: Request, name: str) -> str:
+    return request.cookies.get(name, "")
+
+
+@app.get("/auth/login")
+def auth_login(request: Request):
+    """OAuth sign-in chooser. Renders provider buttons (or a note if none
+    configured). `role` query param selects user vs advertiser."""
+    role = request.query_params.get("role", "user")
+    return portal_html.oauth_login(role, oauth.providers_configured())
+
+
+@app.get("/auth/start/{provider}")
+async def auth_start(request: Request, provider: str):
+    """Start OAuth for a provider. `role` query param is user or advertiser.
+    Sets a CSRF `oauth_state` cookie and redirects to the provider."""
+    role = request.query_params.get("role", "user")
+    if role not in ("user", "advertiser"):
+        role = "user"
+    if provider not in ("github", "google"):
+        return HTMLResponse("unknown provider", status_code=400)
+    if provider not in oauth.providers_configured():
+        return HTMLResponse("provider not configured", status_code=400)
+    state = oauth.new_state(role, provider)
+    url = oauth.auth_url(provider, role, state)
+    resp = RedirectResponse(url, status_code=302)
+    resp.set_cookie("oauth_state", state, httponly=True, samesite="lax",
+                    max_age=600, secure=config.PUBLIC_HOST.startswith("https"))
+    return resp
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    """OAuth callback: verify state, exchange code, mint session cookie, go to
+    the role dashboard. The provider is recovered from the CSRF state cookie."""
+    state = _cookie(request, "oauth_state")
+    try:
+        role, provider, _, _ = state.split("|")
+    except ValueError:
+        return HTMLResponse("invalid oauth state", status_code=400)
+    code = request.query_params.get("code", "")
+    if not code:
+        return HTMLResponse("missing code", status_code=400)
+    if not oauth.verify_state(state, role, provider):
+        return HTMLResponse("invalid oauth state", status_code=400)
+    try:
+        identity = await oauth.exchange(provider, code)
+    except Exception as e:
+        return HTMLResponse(f"oauth error: {e}", status_code=502)
+    email = identity.get("email") or ""
+    if not email:
+        return HTMLResponse("oauth did not return an email", status_code=400)
+    # Create the account if needed (role-specific).
+    if role == "user":
+        if not portal.get_user_by_email(email):
+            portal.create_user(email)
+        user = portal.get_user_by_email(email)
+    else:
+        if not portal.get_advertiser(email):
+            portal.create_advertiser(email)
+        adv = portal.get_advertiser(email)
+        user = adv
+    # Mint signed session cookie + clear the oauth_state cookie.
+    session = oauth.make_session_cookie(role, email)
+    resp = RedirectResponse(f"/portal/{role}/dash", status_code=302)
+    resp.set_cookie("guac_session", session, httponly=True, samesite="lax",
+                    max_age=config.SESSION_TTL_S,
+                    secure=config.PUBLIC_HOST.startswith("https"))
+    resp.delete_cookie("oauth_state")
+    return resp
+
+
+@app.get("/portal/{role}/dash")
+def role_dashboard(request: Request, role: str):
+    """Authenticated dashboard for a role, from the session cookie."""
+    session = _cookie(request, "guac_session")
+    s_role, email = oauth.verify_session_cookie(session)
+    if s_role != role or not email:
+        return RedirectResponse("/portal", status_code=302)
+    if role == "user":
+        user = portal.get_user_by_email(email)
+        if not user:
+            return RedirectResponse("/portal", status_code=302)
+        savings = 0.0
+        for r in _read_ledger(config.LEDGER_FILE):
+            if r.get("user") == email and r.get("sponsored"):
+                savings += config.DISCOUNT_RATE
+        return portal_html.user_dashboard(user, savings)
+    adv = portal.get_advertiser(email)
+    if not adv:
+        return RedirectResponse("/portal", status_code=302)
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                            balance=payments.balance_for(email))
+
+
+@app.post("/portal/logout")
+def logout(request: Request):
+    resp = RedirectResponse("/portal", status_code=302)
+    resp.delete_cookie("guac_session")
+    return resp
 
 
 @app.get("/portal", response_class=HTMLResponse)
