@@ -7,6 +7,12 @@ keeps only its fee. Verifies:
   - user pays strictly less than retail (discount is material)"""
 import datetime as _dt
 import json
+import os
+import tempfile
+
+# Isolate: point the payments ledger at a fresh temp file so settlement's
+# ad-revenue falls back to per-row cost (not a stray repo payments.jsonl).
+os.environ["ADGATE_PAYMENTS_LEDGER"] = os.path.join(tempfile.mkdtemp(), "payments.jsonl")
 
 import settlement
 

@@ -11,7 +11,12 @@ a recorded impression cost, high-token outlier requests). Verifies that:
 """
 import datetime as _dt
 import json
+import os
 import random
+import tempfile
+
+# Isolate: fresh temp payments ledger so settlement falls back to per-row cost.
+os.environ["ADGATE_PAYMENTS_LEDGER"] = os.path.join(tempfile.mkdtemp(), "payments.jsonl")
 
 import settlement
 

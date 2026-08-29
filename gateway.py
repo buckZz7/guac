@@ -12,7 +12,6 @@ Point any agent (Hermes custom provider, OpenClaw, Codex) at this endpoint:
 """
 import argparse
 import datetime as _dt
-import html
 import json
 import re
 import time
@@ -697,34 +696,26 @@ async def backup_endpoint(request: Request):
 
 @app.get("/pitch")
 def pitch():
-    """The advertiser pitch, served as readable HTML for the portal."""
-    return _serve_doc("ADVERTISER_PITCH.md", "guac — advertiser pitch")
+    """The advertiser pitch, served as a styled page."""
+    return _serve_doc("ADVERTISER_PITCH.md", "For advertisers")
 
 
 @app.get("/terms")
 def terms():
     """Terms of Service."""
-    return _serve_doc("TERMS.md", "guac — Terms of Service")
+    return _serve_doc("TERMS.md", "Terms of Service")
 
 
 @app.get("/privacy")
 def privacy():
     """Privacy Policy."""
-    return _serve_doc("PRIVACY.md", "guac — Privacy Policy")
+    return _serve_doc("PRIVACY.md", "Privacy Policy")
 
 
-def _serve_doc(filename: str, fallback_title: str):
+def _serve_doc(filename: str, title: str):
     path = config.BASE / "docs" / filename
     text = path.read_text() if path.exists() else None
-    if not text:
-        return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
-                            "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
-                            "color:#e6e8ee;background:#0b0e14;'>"
-                            f"{fallback_title} — content not found.</pre>")
-    return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
-                        "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
-                        "color:#e6e8ee;background:#0b0e14;'>"
-                        + html.escape(text) + "</pre>")
+    return portal_html.doc_page(title, text)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -976,6 +967,27 @@ def logout(request: Request):
 def home():
     """Marketing landing page."""
     return portal_html.marketing_home()
+
+
+@app.get("/favicon.svg")
+def favicon():
+    from fastapi.responses import Response
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+           "<circle cx='50' cy='50' r='46' fill='#2f9e6e'/>"
+           "<text x='50' y='66' font-size='52' font-family='Arial' font-weight='bold' "
+           "text-anchor='middle' fill='white'>g</text></svg>")
+    return Response(svg, media_type="image/svg+xml")
+
+
+@app.exception_handler(404)
+async def not_found(request: Request, exc):
+    body = """
+<div class="dash" style="text-align:center">
+  <h1>Page not found</h1>
+  <p class="sub">That page doesn't exist — it may have moved.</p>
+  <a class="btn btn-primary" href="/">Back to guac home</a>
+</div>"""
+    return portal_html._page("Not found", body)
 
 
 @app.get("/portal", response_class=HTMLResponse)

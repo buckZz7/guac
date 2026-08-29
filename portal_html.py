@@ -119,15 +119,39 @@ footer .links{{margin-left:auto;display:flex;gap:20px}}
 .faq details{{background:{_CARD};border:1px solid {_BORDER};border-radius:10px;padding:16px 20px;margin-bottom:10px}}
 .faq summary{{font-weight:600;cursor:pointer}}
 .faq p{{color:{_MUTED};margin-top:8px;font-size:.95rem}}
+/* doc pages */
+.doc-page{{max-width:760px}}
+.doc-page .back{{display:inline-block;margin-bottom:16px;color:{_MUTED}}}
+.doc-page h1{{font-size:1.9rem;margin-bottom:8px}}
+.doc-page h2{{font-size:1.35rem;margin:28px 0 8px}}
+.doc-page h3{{font-size:1.1rem;margin:20px 0 6px}}
+.doc-page p{{color:#334155;margin:10px 0}}
+.doc-page ul,.doc-page ol{{margin:10px 0 10px 24px;color:#334155}}
+.doc-page li{{margin:4px 0}}
+.doc-page code{{background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:.9em;color:#0f172a}}
+.doc-page hr{{border:0;border-top:1px solid {_BORDER};margin:24px 0}}
+.doc-page .doc-code{{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:16px;
+  overflow-x:auto;font-family:monospace;font-size:.85rem;margin:12px 0}}
+.doc-page blockquote{{border-left:3px solid {_ACCENT};padding:6px 16px;margin:12px 0;color:{_MUTED}}}
 """
 
 
 def _page(title, body, nav_links=()):
     nav = "".join(f'<a href="{_html.escape(h)}">{_html.escape(t)}</a>' for t, h in nav_links)
+    favicon = ("data:image/svg+xml," +
+               "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E"
+               "%3Ccircle cx='50' cy='50' r='46' fill='%232f9e6e'/%3E"
+               "%3Ctext x='50' y='66' font-size='52' font-family='Arial' font-weight='bold' "
+               "text-anchor='middle' fill='white'%3Eg%3C/text%3E%3C/svg%3E")
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="guac — pay less for AI. A disclosed sponsor follows some of your agent's answers and advertiser money lowers your inference cost. Point any OpenAI-compatible agent at one URL.">
+<meta property="og:title" content="guac — pay less for AI">
+<meta property="og:description" content="The ad-funded AI gateway. Disclosed sponsors, honest pricing, no ads in the model.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://addguac.fly.dev/">
+<link rel="icon" href="{favicon}">
 <title>{_html.escape(title)} · guac</title><style>{_CSS}</style></head>
 <body>
 <nav class="nav"><div class="inner">
@@ -467,3 +491,85 @@ def _toggle(offer_id, paused, email):
 
 def button(label):
     return f'<button class="btn btn-ghost" style="padding:6px 12px" type="submit">{_html.escape(label)}</button>'
+
+
+# ---------------------------------------------------------------------------
+# Markdown -> styled HTML (for /pitch, /terms, /privacy docs)
+# ---------------------------------------------------------------------------
+
+def _md_inline(text: str) -> str:
+    """Minimal inline markdown: bold, italic, code, links. Escapes HTML."""
+    import re as _re
+    text = _html.escape(text)
+    # code spans: `x`
+    text = _re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    text = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = _re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
+    # links [text](url) -> only https, else strip
+    def _link(m):
+        label, url = m.group(1), m.group(2)
+        if url.startswith(("http://", "https://", "/")):
+            return f'<a href="{url}">{label}</a>'
+        return label
+    text = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _link, text)
+    return text
+
+
+def render_markdown(text: str) -> str:
+    """Render a markdown string to styled HTML for the doc pages."""
+    import re as _re
+    lines = text.splitlines()
+    html = []
+    in_code = False
+    code_buf = []
+    list_buf = []
+
+    def flush_list():
+        if list_buf:
+            html.append("<ul>" + "".join(f"<li>{_md_inline(x)}</li>" for x in list_buf) + "</ul>")
+            list_buf.clear()
+
+    for line in lines:
+        if line.startswith("```"):
+            if in_code:
+                html.append(f'<pre class="doc-code">{"\n".join(code_buf)}</pre>')
+                code_buf = []
+                in_code = False
+            else:
+                flush_list()
+                in_code = True
+            continue
+        if in_code:
+            code_buf.append(line)
+            continue
+        if line.strip() == "":
+            flush_list()
+            continue
+        if line.startswith("### "):
+            flush_list(); html.append(f"<h3>{_md_inline(line[4:])}</h3>")
+        elif line.startswith("## "):
+            flush_list(); html.append(f"<h2>{_md_inline(line[3:])}</h2>")
+        elif line.startswith("# "):
+            flush_list(); html.append(f"<h1>{_md_inline(line[2:])}</h1>")
+        elif line.startswith("- "):
+            list_buf.append(line[2:])
+        elif _re.match(r"^\d+\.\s", line):
+            list_buf.append(_re.sub(r"^\d+\.\s", "", line))
+        elif line.startswith("---"):
+            flush_list(); html.append("<hr>")
+        else:
+            flush_list(); html.append(f"<p>{_md_inline(line)}</p>")
+    flush_list()
+    return "\n".join(html)
+
+
+def doc_page(title, markdown_text, fallback=None):
+    """A docs page in the design system."""
+    if not markdown_text:
+        markdown_text = fallback or f"# {title}\n\nContent not found."
+    body = f"""
+<div class="dash doc-page">
+  <a href="/" class="back">&larr; guac home</a>
+  {render_markdown(markdown_text)}
+</div>"""
+    return _page(title, body, nav_links=(("For advertisers", "/pitch"), ("Terms", "/terms"), ("Privacy", "/privacy")))
