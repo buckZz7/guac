@@ -134,7 +134,7 @@ def main():
         noauth = httpx.get(GW + "/settle")
         assert noauth.status_code == 401, noauth.status_code
         s = httpx.get(GW + "/settle", headers={"authorization": f"Bearer {KEY}"}).json()
-        assert s["ads_delivered"] >= 1 and s["guac_margin"] >= 0, s
+        assert s["ads_delivered"] >= 1 and s["ad_revenue"] >= 0, s
         assert s["user_saving"] >= 0, "negative saving"
         print("operator /settle statement (master-key protected):", "✓")
         print("settlement conservation (no negative saving):", "✓")

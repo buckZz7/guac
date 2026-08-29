@@ -259,43 +259,42 @@ def _billable_user(uid):
 
 
 def _request_cost(supplier, body, usage, completion_words=None):
-    """Real wholesale USD cost of one served request.
-    Pinned suppliers: per-supplier $/M pricing from config.MODEL_PRICING.
-    Passthrough suppliers: the supplier-reported usage.cost when present
-    (OpenRouter returns real cost), else the flat blended wholesale rate."""
+    """The USER's price for one request: the market rate for these tokens,
+    minus the discount. Users never see the full price — the discount is baked
+    into every bill, sponsored or not. Advertiser revenue funds the gap.
+
+    Pinned suppliers: REFERENCE_PRICING (market $/M), discounted.
+    Passthrough: the supplier-reported usage.cost when present (OpenRouter
+    reports real cost), discounted; else the flat blended rate, discounted.
+    """
     prompt_tk = usage.get("prompt_tokens", 0) or _prompt_tokens(body)
     completion_tk = usage.get("completion_tokens", 0)
     if not completion_tk and completion_words:
         completion_tk = completion_words
-    price = config.MODEL_PRICING.get(supplier.name)
+    keep = 1.0 - config.DISCOUNT_RATE
+    price = config.REFERENCE_PRICING.get(supplier.name)
     if price:
         p_per_m, c_per_m = price
-        return (prompt_tk * p_per_m + completion_tk * c_per_m) / 1_000_000
+        market = (prompt_tk * p_per_m + completion_tk * c_per_m) / 1_000_000
+        return market * keep
     cost = usage.get("cost")
     if isinstance(cost, (int, float)) and cost > 0:
-        return float(cost)
-    return (prompt_tk + completion_tk) * config.PASSTHROUGH_WHOLESALE_PER_M / 1_000_000
+        return float(cost) * keep
+    market = (prompt_tk + completion_tk) * config.PASSTHROUGH_WHOLESALE_PER_M / 1_000_000
+    return market * keep
 
 
-def _settle_user_bill(uid, cost, model, supplier_name, sponsored_meta=None):
-    """Bill one request to the user's prepaid balance (ad subsidy drawn first).
+def _bill_user(uid, cost, model, supplier_name):
+    """Bill one request to the user's prepaid balance at the discounted rate.
     Returns the bill dict recorded in the ledger. If the balance can't cover
     it, the row is marked unpaid — the pre-flight gate 402s the NEXT request,
     so at most one request rides slightly past the balance."""
-    res = payments.charge_request(uid, cost, note=f"{model} via {supplier_name}")
-    bill = {
-        "cost": round(cost, 8),
-        "user_paid": res["user_paid"],
-        "subsidy_used": res["subsidy_used"],
-        "unpaid": (not res["charged"]),
+    charged = payments.charge_request(uid, cost, note=f"{model} via {supplier_name}")
+    return {
+        "cost": round(cost, 8),          # what the user pays (already discounted)
+        "discount_rate": config.DISCOUNT_RATE,
+        "unpaid": (not charged),
     }
-    if sponsored_meta and res["charged"]:
-        # Sponsor money subsidizes THIS user's future tokens: guac keeps its
-        # fee fraction, the rest is credited to the user's subsidy bucket.
-        pass_through = config.IMPRESSION_COST * (1.0 - config.GUAC_AD_FEE_FRACTION)
-        payments.sponsor_pass_through(uid, pass_through, note=sponsored_meta)
-        bill["sponsor_credit"] = round(pass_through, 8)
-    return bill
 
 
 # ---------------------------------------------------------------------------
@@ -368,11 +367,10 @@ async def chat_completions(request: Request):
     stream = bool(body.get("stream", False))
     model = body.get("model", "guac")
 
-    # Paid-with-discount: real user accounts prepay for inference. Empty
-    # balance -> 402 with a pointer to top up. Sponsor money lands in their
-    # subsidy bucket and is drawn FIRST when requests are billed, so it is
-    # literally what discounts their tokens. Master key (operator) and
-    # advertiser identities are never gated or billed here.
+    # Paid-with-discount: users prepay, and EVERY request bills the discounted
+    # rate — sponsored or not. Advertiser revenue funds the discount; the user
+    # just sees a cheaper price. Empty balance -> 402. Master key (operator)
+    # and advertiser identities are never gated or billed here.
     if _billable_user(billing_id) and payments.balance_for(billing_id) <= 0:
         return JSONResponse({"error": {
             "message": "balance empty — top up in the portal to keep using guac",
@@ -478,28 +476,23 @@ async def chat_completions(request: Request):
                                 offer = _should_show_ad(uid)[1]
                             sponsor = None
                             impression_cost = 0.0
-                            sponsored_meta = None
                             if offer:
                                 sponsor = offer.get("advertiser") or offer.get("sponsor")
                                 _o, impression_cost = portal.charge_impression(offer["id"])
-                                sponsored_meta = f"offer {offer['id']}"
                                 footer = _footer_text(offer)
                                 fe = {"id": "cmpl-guac", "object": "chat.completion.chunk",
                                       "created": 0, "model": model,
                                       "choices": [{"index": 0, "delta": {"content": footer},
                                                    "finish_reason": None}]}
                                 yield f"data: {json.dumps(fe)}\n\n".encode()
-                            # Paid-with-discount billing: real wholesale cost of
-                            # this request (SSE has no usage block, so cost is
-                            # estimated from tokens; streams don't report
-                            # usage.cost), billed to the user's balance with
-                            # the ad subsidy bucket drawn first.
+                            # Bill at the discounted rate (SSE has no usage
+                            # block, so cost is estimated from tokens).
                             bill = None
                             if _billable_user(billing_id):
                                 s_cost = _request_cost(chosen, body, {},
                                                        completion_words=_words(full))
-                                bill = _settle_user_bill(billing_id, s_cost, model,
-                                                         chosen.name, sponsored_meta)
+                                bill = _bill_user(billing_id, s_cost, model,
+                                                  chosen.name)
                             config.log_ledger({
                                 "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
                                 "user": uid,
@@ -559,14 +552,12 @@ async def chat_completions(request: Request):
 
     sponsor = None
     impression_cost = 0.0
-    sponsored_meta = None
     if offer:
         sponsor = offer.get("advertiser") or offer.get("sponsor")
         # Per-impression billing: record one delivered impression against the
         # offer, capturing the actual amount charged so settlement can compute
         # real ad revenue (not a hardcoded per-offer estimate).
         _o, impression_cost = portal.charge_impression(offer["id"])
-        sponsored_meta = f"offer {offer['id']}"
         # Append the disclosed footer BELOW the model answer, delimited by ---.
         data["choices"][0]["message"]["content"] = content + _footer_text(offer)
         data["guac"] = {
@@ -574,14 +565,10 @@ async def chat_completions(request: Request):
             "sponsorship": _human_payload(offer),
         }
 
-    # Paid-with-discount billing: real wholesale cost billed to the user's
-    # balance (ad subsidy drawn first); the sponsor pass-through credit is
-    # applied by _settle_user_bill when this answer carried a sponsor.
+    # Bill at the discounted rate — every request, sponsored or not.
     cost = _request_cost(chosen, body, usage)
-    bill = _settle_user_bill(billing_id, cost, model, chosen.name,
-                             sponsored_meta) if _billable_user(billing_id) else None
-    if bill and bill.get("subsidy_used"):
-        data.setdefault("guac", {})["subsidy_used"] = bill["subsidy_used"]
+    bill = _bill_user(billing_id, cost, model, chosen.name) \
+        if _billable_user(billing_id) else None
     config.log_ledger({
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "user": uid,
@@ -1135,12 +1122,13 @@ async def auth_callback(request: Request):
 
 
 def _user_money(email):
-    """Real money numbers for the user dashboard: balance split + lifetime
-    savings drawn from the payments ledger (subsidy consumed by billing)."""
-    own, subsidy = payments.user_balance_parts(email)
-    saved = 0.0
-    if config.PAYMENTS_LEDGER.exists():
-        for line in config.PAYMENTS_LEDGER.read_text().splitlines():
+    """Real money numbers for the user dashboard: current balance, lifetime
+    spend, and lifetime savings vs market rate — all from the ledgers."""
+    balance = payments.balance_for(email)
+    spent = 0.0   # what the user paid (discounted)
+    market = 0.0  # what those tokens would cost at full market rate
+    if config.LEDGER_FILE.exists():
+        for line in config.LEDGER_FILE.read_text().splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -1148,9 +1136,15 @@ def _user_money(email):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if row.get("advertiser") == email and row.get("source") == "subsidy_used":
-                saved += -row.get("delta", 0.0)
-    return own, subsidy, saved
+            if row.get("user") != email:
+                continue
+            bill = row.get("bill") or {}
+            cost = bill.get("cost", 0.0)
+            rate = bill.get("discount_rate") or 0.0
+            spent += cost
+            if rate and rate < 1.0:
+                market += cost / (1.0 - rate)
+    return balance, spent, max(market - spent, 0.0)
 
 
 @app.get("/portal/{role}/dash")
@@ -1164,8 +1158,8 @@ def role_dashboard(request: Request, role: str):
         user = portal.get_user_by_email(email)
         if not user:
             return RedirectResponse("/portal", status_code=302)
-        own, subsidy, saved = _user_money(email)
-        return portal_html.user_dashboard(user, own, subsidy, saved)
+        balance, spent, saved = _user_money(email)
+        return portal_html.user_dashboard(user, balance, spent, saved)
     adv = portal.get_advertiser(email)
     if not adv:
         return RedirectResponse("/portal", status_code=302)
@@ -1187,12 +1181,12 @@ def home():
     try:
         rows = _read_ledger(config.LEDGER_FILE)
         if rows:
-            subsidized = sum((r.get("bill") or {}).get("subsidy_used", 0.0)
-                             for r in rows)
+            user_paid = sum((r.get("bill") or {}).get("cost", 0.0) for r in rows
+                            if r.get("bill"))
             stats = {
                 "requests": len(rows),
                 "impressions": sum(1 for r in rows if r.get("sponsored")),
-                "subsidized_usd": subsidized,
+                "subsidized_usd": user_paid,
             }
     except Exception:
         pass
@@ -1256,8 +1250,8 @@ async def portal_user_auth(request: Request):
     user = portal.get_user_by_email(email)
     if not user:
         return portal_html.user_login_form(error="No such user")
-    own, subsidy, saved = _user_money(email)
-    return portal_html.user_dashboard(user, own, subsidy, saved)
+    balance, spent, saved = _user_money(email)
+    return portal_html.user_dashboard(user, balance, spent, saved)
 
 
 @app.post("/portal/advertiser/login", response_class=HTMLResponse)

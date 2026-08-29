@@ -35,15 +35,14 @@ ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "3"))
 LATENCY_GRACE_MS = float(os.environ.get("ADGATE_LATENCY_GRACE_MS", "4000"))
 LATENCY_HARD_MS = float(os.environ.get("ADGATE_LATENCY_HARD_MS", "15000"))
 
-# Advertiser-funded discount: sponsor money is passed through to the USER as
-# balance credits. guac keeps a fixed fraction of each impression as its fee;
-# the rest is credited to the user whose answer carried the sponsor.
-# 0.20 = guac keeps 20% of ad revenue, 80% goes to the user.
-GUAC_AD_FEE_FRACTION = float(os.environ.get("ADGATE_GUAC_AD_FEE_FRACTION", "0.20"))
+# The discount: users ALWAYS pay below market rate, on every request —
+# sponsored or not. Advertiser revenue funds the gap. 0.30 = 30% off.
+DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.30"))
 
 # Per-impression advertiser billing: each delivered "brought to you by" costs
 # one impression; the advertiser's budget is the max impressions they fund.
-# An offer auto-pauses when its budget is spent.
+# An offer auto-pauses when its budget is spent. Ad revenue is what keeps the
+# user-facing discount funded.
 IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.05"))
 
 # Flat blended wholesale $/M used when a passthrough model's real cost is not
@@ -51,6 +50,15 @@ IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.05"))
 # have it; this is the honest fallback).
 PASSTHROUGH_WHOLESALE_PER_M = float(
     os.environ.get("ADGATE_PASSTHROUGH_PER_M", "0.50"))
+
+# Market reference rates ($/M prompt, completion) per pinned supplier — what
+# the user would pay going direct. The user's rate is this minus the discount.
+REFERENCE_PRICING = {
+    "chutes-sn64": (0.60, 2.20),     # GLM-5.2 class, market reference
+    "engy-sn53": (0.60, 2.20),
+    "openrouter-paid": (0.25, 1.00),  # deepseek-chat-v3-0324 on OpenRouter
+    "openrouter-free": (0.0, 0.0),
+}
 
 # Serve the static ads.json demo inventory only when explicitly enabled.
 # OFF by default: production must never show unfunded, unaffiliated offers.

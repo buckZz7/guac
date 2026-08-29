@@ -122,26 +122,44 @@ def main():
         d = r.json()
         assert d.get("guac", {}).get("sponsored"), "funded offer should serve"
 
-        import config, payments
+        import config
         cfg = config
-        credit = cfg.IMPRESSION_COST * (1 - cfg.GUAC_AD_FEE_FRACTION)
-        own, subsidy = payments.user_balance_parts("alice@example.com")
-        assert abs(subsidy - credit) < 1e-6, (subsidy, credit)
-        print(f"PASS  sponsored answer credited ${credit:.4f} to user subsidy bucket")
 
-        # 3b) next bill draws the subsidy bucket FIRST
+        # 3b) FLAT-DISCOUNT billing: the bill is market cost * (1 - discount),
+        # debited straight from the balance. No credits, no rebate mechanics.
+        with open(os.path.join(td, "payments.jsonl")) as f:
+            pay_rows = [json.loads(l) for l in f if l.strip()]
+        debits = [x for x in pay_rows if x.get("source") == "inference"]
+        assert debits, "request must debit the user balance"
+        # stub reports 1 prompt + 2 completion tokens; no supplier pricing for
+        # 'stub', so cost = tokens * passthrough rate * (1 - discount)
+        exp = 3 * cfg.PASSTHROUGH_WHOLESALE_PER_M / 1e6 * (1 - cfg.DISCOUNT_RATE)
+        assert abs(-debits[0]["delta"] - exp) < 1e-9, (debits[0]["delta"], exp)
+        # ledger row records the discounted bill
+        with open(os.path.join(ROOT, "ledger.jsonl")) as f:
+            led = [json.loads(l) for l in f if l.strip()]
+        bill = led[-1]["bill"]
+        assert abs(bill["cost"] - exp) < 1e-9, bill
+        assert bill["discount_rate"] == cfg.DISCOUNT_RATE
+        # no credit/rebate rows exist — the discount lives in the rate only
+        assert not any(x.get("source") == "sponsor_pass_through" for x in pay_rows)
+        print(f"PASS  request billed at flat discounted rate (${exp:.8f}), no credit mechanics")
+
+        # 3c) UNSPONSORED request is ALSO discounted — the rate is always on
         r = httpx.post(f"{GATEWAY}/v1/chat/completions",
                        headers={"authorization": f"Bearer {ukey}"},
                        json={"model": "stub", "_stub_finish": "stop",
-                             "messages": [{"role": "user", "content": "again"}]})
+                             "_stub_content": "no ad turn",
+                             "messages": [{"role": "user", "content": "hello again"}]})
         assert r.status_code == 200
-        rows = []
         with open(os.path.join(td, "payments.jsonl")) as f:
-            rows = [json.loads(l) for l in f if l.strip()]
-        used = [x for x in rows if x.get("source") == "subsidy_used"]
-        assert used, "second bill must draw the subsidy bucket"
-        assert abs(used[0]["delta"] + credit) < 1e-6 or used[0]["delta"] < 0
-        print("PASS  next request drew sponsor subsidy before own money")
+            pay_rows = [json.loads(l) for l in f if l.strip()]
+        debits = [x for x in pay_rows if x.get("source") == "inference"]
+        assert len(debits) == 2
+        # "hello again" (2 prompt) + "(stub) hello again" (3 completion) = 5 tokens
+        exp2 = 5 * cfg.PASSTHROUGH_WHOLESALE_PER_M / 1e6 * (1 - cfg.DISCOUNT_RATE)
+        assert abs(-debits[1]["delta"] - exp2) < 1e-9, debits[1]["delta"]
+        print("PASS  unsponsored request billed at the same discounted rate")
 
         # 4) replayed history: assistant turn carries an old guac footer;
         #    the forwarded body must have it stripped.

@@ -26,8 +26,8 @@ _GREEN = "#3ecf8e"       # brand
 _GREEN_LINK = "#00c573"  # interactive green
 _GREEN_BORDER = "rgba(62,207,142,.3)"
 
-# What a user earns per sponsored answer: the impression fee minus guac's cut.
-_SPONSOR_CREDIT = config.IMPRESSION_COST * (1.0 - config.GUAC_AD_FEE_FRACTION)
+# The headline user-facing number: the discount on every request.
+_DISCOUNT_PCT = int(config.DISCOUNT_RATE * 100)
 
 _MONO = '"Source Code Pro",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
 
@@ -224,9 +224,9 @@ def _page(title, body, nav_links=()):
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="guac — the ad-subsidized inference gateway. Pay wholesale for any model; disclosed sponsors under your agent's answers credit money back onto your balance. Point any OpenAI-compatible agent at one URL.">
+<meta name="description" content="guac — inference at a flat discount, funded by disclosed sponsors. Pay below market rate on every request; a sponsor appears below a few answers a day. Point any OpenAI-compatible agent at one URL.">
 <meta property="og:title" content="guac — pay wholesale for AI, sponsored">
-<meta property="og:description" content="The ad-subsidized AI gateway. Real wholesale rates, sponsor credits drawn first, no ads in the model.">
+<meta property="og:description" content="The ad-funded inference gateway. A flat discount on every request, disclosed sponsors, no ads in the model.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://addguac.fly.dev/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -246,7 +246,7 @@ def _page(title, body, nav_links=()):
 </div></nav>
 {body}
 <footer><div class="inner">
-  <div>guac — the ad-subsidized inference gateway. Wholesale rates, sponsor credits, no ads in the model.</div>
+  <div>guac — inference below market rate, funded by disclosed sponsors.</div>
   <div class="links">
     <a href="/advertisers">Advertisers</a><a href="/pitch">Pitch</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="https://github.com/buckZz7/guac">GitHub</a>
   </div>
@@ -264,16 +264,16 @@ def marketing_home(stats=None):
 <div class="meter"><div class="container" style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center;align-items:center">
   <span><b>{stats['requests']:,}</b> requests served</span>
   <span><b>{stats['impressions']:,}</b> sponsorships delivered</span>
-  <span><b>${stats['subsidized_usd']:.2f}</b> ad money returned to users</span>
+  <span><b>${stats['subsidized_usd']:.2f}</b> billed at the discounted rate</span>
   <span class="note">live from the guac ledger</span>
 </div></div>"""
     body = f"""
 <div class="hero">
   <span class="eyebrow">Inference, sponsored</span>
-  <h1>Cheaper tokens.<br><span class="accent">Sponsors pay the difference.</span></h1>
-  <p class="lede">Point your agent at one URL. You pay the real wholesale price of your
-  tokens — and when an answer carries a disclosed sponsor, that money lands on your
-  balance and is spent before yours. Your model output is never touched.</p>
+  <h1>Every token, {_DISCOUNT_PCT}% off.<br><span class="accent">Sponsors fund the discount.</span></h1>
+  <p class="lede">Point your agent at one URL. Every request is billed {int(config.DISCOUNT_RATE*100)}%
+  under market price — sponsored answer or not. A few answers a day carry a disclosed
+  sponsor below them; that ad revenue is what keeps your rate low. The model output itself is never touched.</p>
   <div class="cta">
     <a class="btn btn-primary" href="/portal">Get my API key</a>
     <a class="btn btn-ghost" href="#how">How it works</a>
@@ -289,10 +289,10 @@ def marketing_home(stats=None):
     <div class="steps">
       <div class="step"><span class="num">01</span><h3>Top up &amp; connect</h3>
         <p>Get an API key and base URL. Point Hermes, Codex, OpenClaw — any OpenAI-compatible client — at it.</p></div>
-      <div class="step"><span class="num">02</span><h3>Billed at cost</h3>
-        <p>Every request charges the provider's actual wholesale price. No markup, no subscription, no surprises.</p></div>
-      <div class="step"><span class="num">03</span><h3>Sponsors shrink your bill</h3>
-        <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That money credits your balance and is drawn first.</p></div>
+      <div class="step"><span class="num">02</span><h3>Billed at the discounted rate</h3>
+        <p>Every request charges {int(config.DISCOUNT_RATE*100)}% less than the market price — always. No markup, no subscription, no surprises.</p></div>
+      <div class="step"><span class="num">03</span><h3>Sponsors fund the discount</h3>
+        <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That ad revenue is what pays for your below-market rate.</p></div>
     </div>
   </div>
 </section>
@@ -300,7 +300,7 @@ def marketing_home(stats=None):
 <section style="padding-top:0">
   <div class="container">
     <div class="sec-head"><span class="kicker">The exchange</span>
-      <h2>Your answer, untouched. The sponsor below it pays you back.</h2></div>
+      <h2>Your answer, untouched. The sponsor below it keeps your rate low.</h2></div>
     <div class="mock">
       <div class="bubble"><div class="q">You: Which VPN should I get?</div>
         <div class="a">The best pick depends on your needs — streaming, privacy, or speed. Here are my top recommendations…</div></div>
@@ -310,21 +310,21 @@ def marketing_home(stats=None):
         <a href="/pitch">Learn more</a>
       </div>
     </div>
-    <p class="caption">Everything above the line is byte-identical to the model's output. The footer is the ad — and it credits ~${'{:.2f}'.format(_SPONSOR_CREDIT)} to you.</p>
+    <p class="caption">Everything above the line is byte-identical to the model's output. The footer is the ad — and it's what funds your discount.</p>
   </div>
 </section>
 
 <section id="pricing" style="padding-top:0">
   <div class="container">
     <div class="sec-head"><span class="kicker">Pricing</span>
-      <h2>You pay what the model costs. Sponsors pay you back.</h2></div>
+      <h2>Below market price. On every request.</h2></div>
     <div class="grid">
-      <div class="card"><span class="ic">{_icon('tag')}</span><h3>Wholesale + nothing</h3>
-        <p>Your bill is the provider's actual token cost, metered per request. OpenRouter reports real cost; fixed pools use published $/M rates.</p></div>
-      <div class="card"><span class="ic">{_icon('gift')}</span><h3>Sponsor credit, spent first</h3>
-        <p>Each sponsored answer puts ~${'{:.2f}'.format(_SPONSOR_CREDIT)} on your balance. At billing time it's drawn before your own money — the discount is real cash, not a coupon.</p></div>
+      <div class="card"><span class="ic">{_icon('tag')}</span><h3>Market price minus {_DISCOUNT_PCT}%</h3>
+        <p>Each request is metered and billed at the market rate for those tokens, minus the discount. Frontier models price off the provider's real cost.</p></div>
+      <div class="card"><span class="ic">{_icon('gift')}</span><h3>Discounted whether sponsored or not</h3>
+        <p>You don't earn credits or wait for ads. The discount is in your rate — every request, every model. Sponsors are simply what makes it sustainable.</p></div>
       <div class="card"><span class="ic">{_icon('eye')}</span><h3>Every cent visible</h3>
-        <p>Your dashboard shows your balance, your sponsor credit, and each request's cost. The ledger is append-only and auditable.</p></div>
+        <p>Your dashboard shows your balance, what you've spent, and what you've saved vs market price. The ledger is append-only and auditable.</p></div>
     </div>
   </div>
 </section>
@@ -365,8 +365,8 @@ def marketing_home(stats=None):
     <div class="sec-head"><span class="kicker">FAQ</span><h2>Questions</h2></div>
     <div class="faq">
       <details><summary>Do ads go inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked "Sponsor".</p></details>
-      <details><summary>How does the discount actually work?</summary><p>When an answer carries a sponsor, that advertiser's impression fee is credited onto your balance (minus guac's cut). At billing time your sponsor credit is spent before your own money — advertiser money literally covers tokens you'd otherwise pay for.</p></details>
-      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The wholesale cost of your tokens — the provider's real price, metered per request. No markup.</p></details>
+      <details><summary>How does the discount actually work?</summary><p>Your rate is the market price minus our discount, on every request. Advertisers pay for disclosed sponsorships below a few answers a day; that revenue funds the gap between your price and market price. You never see a full-price bill.</p></details>
+      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The same discounted rate as always. The discount isn't tied to seeing an ad — it's in your price on every request.</p></details>
       <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through, plus quality-gated open-model pools.</p></details>
       <details><summary>Which agents work with guac?</summary><p>Anything OpenAI-compatible: Hermes, Codex, OpenClaw, Aider, or a plain script. If it takes a base_url and an API key, it works.</p></details>
       <details><summary>Will I see ads all the time?</summary><p>No — a few a day at most, and only when an advertiser has funded inventory. No funded sponsor, no footer.</p></details>
@@ -572,21 +572,21 @@ def advertiser_login_form(email=None, magic_link=None, error=None, emailed=False
     return _page("Advertiser portal", body)
 
 
-def user_dashboard(user, balance_own, subsidy, lifetime_saved):
+def user_dashboard(user, balance, spent, saved):
     body = f"""
 <div class="dash">
   <h1>Your agent setup</h1>
   <p class="sub">{_html.escape(user['email'])} · <a href="/portal/logout">log out</a></p>
   <div class="stat-row">
-    <div class="stat"><div class="num">${balance_own:.2f}</div><div class="lbl">your balance</div></div>
-    <div class="stat"><div class="num">${subsidy:.2f}</div><div class="lbl">sponsor credit (spent first)</div></div>
-    <div class="stat"><div class="num">${lifetime_saved:.2f}</div><div class="lbl">saved via sponsors</div></div>
+    <div class="stat"><div class="num">${balance:.2f}</div><div class="lbl">your balance</div></div>
+    <div class="stat"><div class="num">${spent:.4f}</div><div class="lbl">spent (discounted rate)</div></div>
+    <div class="stat"><div class="num">${saved:.4f}</div><div class="lbl">saved vs market price</div></div>
   </div>
   <div class="card" style="margin-bottom:20px">
     <h3>Top up your balance</h3>
-    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">You pay wholesale cost per
-      request. Sponsor credit is drawn first — advertiser money is literally what discounts
-      your tokens.</p>
+    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">Every request is billed at the
+      discounted rate — {int(config.DISCOUNT_RATE*100)}% under market price, always. Sponsors keep
+      that discount funded.</p>
     <form method="post" action="/user/topup">
       <input type="hidden" name="api_key" value="{_html.escape(user['api_key'])}">
       <input type="number" name="amount_cents" value="1000" min="100" step="100" style="max-width:160px">

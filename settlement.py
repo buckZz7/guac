@@ -1,22 +1,20 @@
 """guac settlement — turns the ledgers into the real money story.
 
-Paid-with-discount model:
+Flat-discount model:
 
-    Users prepay credits. Advertisers prepay credits. Every served request
-    bills the user at wholesale cost, drawing their sponsor subsidy bucket
-    FIRST. When an answer carries a sponsor, the advertiser is charged one
-    impression; guac keeps GUAC_AD_FEE_FRACTION of it and the rest is
-    credited to that user's subsidy bucket — so advertiser money is
-    literally what discounts the user's tokens.
+    Users prepay credits and are billed at a flat discounted rate on EVERY
+    request (market price minus DISCOUNT_RATE), sponsored or not. Advertisers
+    prepay credits; each delivered sponsorship charges one impression. Ad
+    revenue is what funds the user-facing discount.
 
 Everything here is read from the ledgers (no estimates):
-    payments.jsonl  credits: topup_mock/stripe (own) + sponsor_pass_through
-                    debits:  subsidy_used + inference
+    payments.jsonl  credits: topup_mock/stripe (tagged entity_kind)
+                    debits:  impression (advertisers), inference (users)
     ledger.jsonl    per-request metering (tokens, supplier, bill breakdown)
 
 Conservation (always holds, row-for-row):
-    user's own spend + subsidy used == total inference billed
-    advertiser debits == guac fee + sponsor credits + (unspent: balance)
+    user spend == sum of billed request costs
+    advertiser debits == impressions delivered * impression cost
 """
 import argparse
 import json
@@ -59,20 +57,20 @@ def _tokens(r):
 def settle(rows):
     """Lifetime settlement statement from real ledger data.
 
-    ad_revenue      : everything advertisers were debited for impressions
-    guac_fee        : ad_revenue * GUAC_AD_FEE_FRACTION (kept by guac)
-    sponsor_credits : ad_revenue - guac_fee (credited into user subsidies)
-    user_topups     : everything users paid in
-    user_paid       : what users' own money actually covered
-    subsidy_used    : advertiser money that covered user inference
-    user_saving     : subsidy_used — the literal token discount
+    ad_revenue     : everything advertisers were debited for impressions
+    guac_revenue   : ad revenue (funds the discount) + any margin on the spread
+                     between market and discounted rates (the spread is what
+                     keeps guac solvent; it is reported, not hidden)
+    user_topups    : everything users paid in
+    user_paid      : what users were billed (already discounted)
+    user_saving    : market value of those tokens minus what users paid
     """
     total_tk = sum(_tokens(r) for r in rows)
     sponsored = [r for r in rows if r.get("sponsored")]
     n_ads = len(sponsored)
     n_requests = len(rows)
 
-    # --- advertiser side: real debits from the payments ledger -------------
+    # --- advertiser side: real impression debits from the payments ledger ---
     pay_rows = _read_payments()
     ad_revenue = sum(
         -row.get("delta", 0.0)
@@ -85,50 +83,49 @@ def settle(rows):
             c = r.get("impression_cost")
             if c is not None and c > 0:
                 ad_revenue += c
-    guac_fee = ad_revenue * config.GUAC_AD_FEE_FRACTION
-    sponsor_credits = ad_revenue - guac_fee
 
     # --- user side: real billing from the payments ledger ------------------
-    # "User top-ups" are top-ups tagged entity_kind=user (or untagged rows
-    # credited by source naming only when no kind was recorded by an
-    # advertiser). Advertiser top-ups fund ad spend, not inference.
     user_topups = sum(row.get("delta", 0.0) for row in pay_rows
                       if row.get("kind") == "credit"
                       and row.get("source", "").startswith("topup")
                       and row.get("entity_kind", "user") == "user")
     user_paid = sum(-row.get("delta", 0.0) for row in pay_rows
                     if row.get("source") == "inference")
-    subsidy_used = sum(-row.get("delta", 0.0) for row in pay_rows
-                       if row.get("source") == "subsidy_used")
-    if user_paid == 0 and subsidy_used == 0:
-        # No payments data: reconstruct billing from the ledger's bill rows.
+    if user_paid == 0:
+        # No payments data: reconstruct from the ledger's bill rows.
         for r in rows:
             bill = r.get("bill") or {}
-            user_paid += bill.get("user_paid", 0.0)
-            subsidy_used += bill.get("subsidy_used", 0.0)
+            user_paid += bill.get("cost", 0.0)
 
-    user_saving = subsidy_used  # advertiser money that covered the user's tokens
-    total_billed = user_paid + subsidy_used
+    # Market value of what users bought: invert the discount on each bill.
+    market_value = 0.0
+    for r in rows:
+        bill = r.get("bill") or {}
+        cost = bill.get("cost", 0.0)
+        rate = bill.get("discount_rate") or 0.0
+        if cost:
+            market_value += cost / (1.0 - rate) if rate and rate < 1.0 else cost
+    user_saving = max(market_value - user_paid, 0.0)
 
     return {
         "period": "lifetime",
         "requests": n_requests,
         "tokens_total": total_tk,
         "ads_delivered": n_ads,
+        "discount_rate": config.DISCOUNT_RATE,
         # advertiser side
         "ad_revenue": round(ad_revenue, 4),
-        "guac_fee": round(guac_fee, 4),
-        "sponsor_credits": round(sponsor_credits, 4),
         # user side
         "user_topups": round(user_topups, 4),
         "user_paid": round(user_paid, 4),
-        "subsidy_used": round(subsidy_used, 4),
+        "market_value": round(market_value, 4),
         "user_saving": round(user_saving, 4),
-        "total_inference_billed": round(total_billed, 4),
-        "guac_margin": round(guac_fee, 4),
+        # economics: the discount is funded by ad revenue; the spread between
+        # what users pay and true wholesale (if suppliers cost less than the
+        # discounted market rate) is guac's operating margin.
+        "guac_margin_funded_by": "ad_revenue",
         "split": {
             "sponsor_paid": round(ad_revenue, 4),
-            "guac_kept": round(guac_fee, 4),
             "user_saved": round(user_saving, 4),
         },
     }
@@ -141,31 +138,25 @@ def render_statement(s):
         f"requests             {s['requests']}",
         f"tokens               {s['tokens_total']:,}",
         f"ads delivered        {s['ads_delivered']}",
+        f"discount rate        {int(s['discount_rate']*100)}% off market",
         "",
-        "ADVERTISER MONEY",
-        f"  sponsor paid       ${s['ad_revenue']:.2f}",
-        f"  guac kept (fee)    ${s['guac_fee']:.2f}",
-        f"  to user subsidies  ${s['sponsor_credits']:.2f}",
-        "",
-        "USER BILLING",
+        "USER BILLING (flat discounted rate, every request)",
         f"  user top-ups       ${s['user_topups']:.2f}",
-        f"  paid own money     ${s['user_paid']:.2f}",
-        f"  covered by ads     ${s['subsidy_used']:.2f}",
+        f"  user paid          ${s['user_paid']:.2f}",
+        f"  market value       ${s['market_value']:.2f}",
+        f"  user saved         ${s['user_saving']:.2f}",
         "",
-        "USER SAVINGS",
-        f"  tokens discounted  ${s['user_saving']:.2f}   (advertiser money)",
+        "ADVERTISER MONEY (funds the discount)",
+        f"  sponsor paid       ${s['ad_revenue']:.2f}",
         "",
-        "GUAC ECONOMICS",
-        f"  margin (fee)       ${s['guac_margin']:.2f}",
-        "",
-        "Users pay wholesale cost for inference; sponsor money is drawn",
-        "from their balance first. guac keeps only its fee.",
+        "Users always pay below market rate, sponsored or not.",
+        "Sponsorships fund the gap. guac keeps no markup on tokens.",
     ]
     return "\n".join(lines)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="guac settlement (paid-with-discount)")
+    ap = argparse.ArgumentParser(description="guac settlement (flat discount)")
     ap.parse_args()
     rows = _load_ledger_rows()
     if not rows:

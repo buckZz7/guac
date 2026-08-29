@@ -1,6 +1,6 @@
-{"ts": "2026-08-29T20:51:17.355674+00:00", "advertiser": "alice@example.com", "delta": 5.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $5.00", "entity_kind": "user"}
-{"ts": "2026-08-29T20:51:17.422603+00:00", "advertiser": "alice@example.com", "delta": -1.5e-06, "kind": "debit", "source": "inference", "note": "stub via primary"}
-{"ts": "2026-08-29T20:51:18.615062+00:00", "advertiser": "acme@example.com", "delta": 10.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $10.00", "entity_kind": "advertiser"}
-{"ts": "2026-08-29T20:51:18.692170+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-756f0d9b"}
-{"ts": "2026-08-29T20:51:18.730522+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-756f0d9b"}
-{"ts": "2026-08-29T20:51:18.739039+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-756f0d9b"}
+{"ts": "2026-08-29T21:12:23.933880+00:00", "advertiser": "alice@example.com", "delta": 5.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $5.00", "entity_kind": "user"}
+{"ts": "2026-08-29T21:12:24.002478+00:00", "advertiser": "alice@example.com", "delta": -1.05e-06, "kind": "debit", "source": "inference", "note": "stub via primary"}
+{"ts": "2026-08-29T21:12:25.186363+00:00", "advertiser": "acme@example.com", "delta": 10.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $10.00", "entity_kind": "advertiser"}
+{"ts": "2026-08-29T21:12:25.260698+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-f81e94ee"}
+{"ts": "2026-08-29T21:12:25.298948+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-f81e94ee"}
+{"ts": "2026-08-29T21:12:25.308392+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-f81e94ee"}
