@@ -6,4 +6,4 @@ ledger.jsonl
 attribution.jsonl
 supplier_state.json
 .git/
-docs/
+# note: docs/ is intentionally NOT ignored — ADVERTISER_PITCH.md is served at /pitch
