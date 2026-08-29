@@ -56,19 +56,41 @@ a{{color:{_GREEN_LINK};text-decoration:none}} a:hover{{text-decoration:underline
 /* nav */
 .nav{{background:rgba(15,15,15,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid {_B1};position:sticky;top:0;z-index:50}}
-.nav .inner{{display:flex;align-items:center;gap:28px;padding:16px 24px;max-width:1080px;margin:0 auto}}
+.nav .inner{{position:relative;display:flex;align-items:center;gap:28px;padding:16px 24px;max-width:1080px;margin:0 auto}}
 .logo{{font-size:1.25rem;font-weight:700;letter-spacing:-.03em;color:{_INK}}}
 .logo span{{color:{_GREEN}}}
 .nav .links{{margin-left:auto;display:flex;gap:24px;align-items:center;font-size:.875rem;
-  flex-wrap:wrap;row-gap:8px}}
-.nav .links a{{color:{_INK2};font-weight:500}} .nav .links a:hover{{color:{_INK};text-decoration:none}}
+  flex-wrap:nowrap}}
+.nav .links a{{color:{_INK2};font-weight:500}}
+.nav .links a:hover{{color:{_INK};text-decoration:none}}
+/* buttons inside the nav keep their own colors — the link rule must not
+   override them (this was the grey-text-on-green bug) */
+.nav .links a.btn{{color:inherit}}
+.nav .links a.btn-primary{{color:#0f0f0f}}
+.nav .links a.btn-ghost{{color:{_INK}}}
+.menu-toggle{{display:none;margin-left:auto;background:none;border:1px solid {_B2};
+  border-radius:10px;padding:9px 11px;cursor:pointer;color:{_INK}}}
+.menu-toggle svg{{display:block}}
+/* mobile nav */
+@media(max-width:640px){{
+  .nav .inner{{padding:13px 20px}}
+  .menu-toggle{{display:block}}
+  .nav .links{{display:none;position:absolute;top:100%;left:0;right:0;
+    flex-direction:column;align-items:stretch;gap:4px;padding:16px 20px 20px;
+    background:rgba(15,15,15,.97);backdrop-filter:blur(12px);border-bottom:1px solid {_B1}}}
+  .nav.open .links{{display:flex}}
+  .nav .links a{{padding:11px 4px;font-size:1rem}}
+  .nav .links a.btn{{text-align:center;margin-top:8px}}
+  .hero{{padding:64px 0 48px}}
+  section{{padding:64px 0}}
+}}
 /* buttons */
 .btn{{display:inline-block;padding:10px 26px;border-radius:999px;font-weight:500;font-size:.875rem;
   border:1px solid transparent;cursor:pointer;transition:border-color .15s,background .15s,color .15s}}
 .btn-primary{{background:{_GREEN};color:#0f0f0f;border-color:{_GREEN}}}
-.btn-primary:hover{{background:#4fdb9d;text-decoration:none}}
+.btn-primary:hover{{background:#4fdb9d;text-decoration:none;color:#0f0f0f}}
 .btn-ghost{{background:transparent;color:{_INK};border-color:{_B3}}}
-.btn-ghost:hover{{border-color:{_MUTED};text-decoration:none}}
+.btn-ghost:hover{{border-color:{_MUTED};text-decoration:none;color:{_INK}}}
 .btn-block{{display:block;width:100%;text-align:center}}
 /* hero */
 .hero{{padding:110px 0 72px;text-align:center}}
@@ -213,8 +235,11 @@ def _page(title, body, nav_links=()):
 <link rel="icon" href="{favicon}">
 <title>{_html.escape(title)} · guac</title><style>{_CSS}</style></head>
 <body>
-<nav class="nav"><div class="inner">
+<nav class="nav" id="nav"><div class="inner">
   <a class="logo" href="/">guac<span>.</span></a>
+  <button class="menu-toggle" aria-label="Menu" onclick="document.getElementById('nav').classList.toggle('open')">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+  </button>
   <div class="links">{nav}
     <a class="btn btn-primary" href="/portal">Get started</a>
   </div>
