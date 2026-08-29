@@ -28,12 +28,19 @@ async def recover():
     return {"ok": True}
 
 
+@app.get("/_last_body")
+async def last_body():
+    """Test hook: the exact body the gateway forwarded on the last request."""
+    return getattr(app.state, "last_body", None) or {}
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: Request):
     if getattr(app.state, "failing", False):
         return Response(json.dumps({"error": {"message": "stub failing"}}),
                         status_code=503, media_type="application/json")
     body = await request.json()
+    app.state.last_body = body  # test hook: inspect what the gateway forwarded
     messages = body.get("messages", [])
     sys = [m.get("content", "") for m in messages if m.get("role") == "system"]
     last_user = [m.get("content", "") for m in messages if m.get("role") == "user"]

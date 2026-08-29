@@ -38,13 +38,58 @@ def log_payment(entry: dict) -> None:
     config.log_ledger_row(config.PAYMENTS_LEDGER, row)
 
 
-def balance_for(advertiser_email: str) -> float:
-    """Current prepaid balance (USD) for an advertiser, from the ledger."""
+def balance_for(entity: str) -> float:
+    """Current prepaid balance (USD) for an entity (advertiser or user),
+    from the ledger: top-ups + sponsor credits − inference debits."""
     bal = 0.0
     for row in _read_ledger():
-        if row.get("advertiser") == advertiser_email:
+        if row.get("advertiser") == entity:
             bal += row.get("delta", 0.0)
     return bal
+
+
+def user_balance_parts(user_entity: str):
+    """Split a user's balance into (own, subsidy).
+    own     = top-ups not yet consumed by inference debits
+    subsidy = sponsor pass-through credits not yet consumed by billing
+    Inference billing draws subsidy FIRST, so the advertiser money is
+    literally what lowers the user's token bill."""
+    own = 0.0
+    subsidy = 0.0
+    for row in _read_ledger():
+        if row.get("advertiser") != user_entity:
+            continue
+        src = row.get("source", "")
+        d = row.get("delta", 0.0)
+        if src == "sponsor_pass_through":
+            subsidy += d
+        elif src == "subsidy_used":
+            subsidy += d  # negative: subsidy consumed by billing
+        else:
+            own += d      # topups (+) and inference debits (-)
+    return max(own, 0.0), max(subsidy, 0.0)
+
+
+def charge_request(user_entity: str, cost: float, note: str = "") -> dict:
+    """Bill one request against the user's prepaid balance, drawing the ad
+    subsidy bucket FIRST so sponsor money is what discounts the tokens.
+    Returns {charged, user_paid, subsidy_used}. If the balance can't cover
+    the cost, returns charged=False and records nothing."""
+    if cost <= 0:
+        return {"charged": True, "user_paid": 0.0, "subsidy_used": 0.0}
+    own, subsidy = user_balance_parts(user_entity)
+    if own + subsidy < cost:
+        return {"charged": False, "user_paid": 0.0, "subsidy_used": 0.0}
+    subsidy_used = min(subsidy, cost)
+    user_paid = cost - subsidy_used
+    if subsidy_used > 0:
+        log_payment({"advertiser": user_entity, "delta": -round(subsidy_used, 8),
+                     "kind": "debit", "source": "subsidy_used", "note": note})
+    if user_paid > 0:
+        log_payment({"advertiser": user_entity, "delta": -round(user_paid, 8),
+                     "kind": "debit", "source": "inference", "note": note})
+    return {"charged": True, "user_paid": round(user_paid, 8),
+            "subsidy_used": round(subsidy_used, 8)}
 
 
 def _read_ledger():
@@ -64,34 +109,55 @@ def _read_ledger():
 # Top-up
 # ---------------------------------------------------------------------------
 
-def create_topup(advertiser_email: str, amount_cents: int) -> dict:
-    """Create a top-up for an advertiser. Returns {session_url} (stripe) or
-    {session_id, amount, credited: true} (mock, credited immediately).
+def create_topup(entity: str, amount_cents: int, kind: str = "user") -> dict:
+    """Create a top-up for an advertiser OR a user. `kind` tags the money so
+    settlement can separate user prepayments from advertiser ad budgets.
+    Returns {session_url} (stripe) or {session_id, amount, credited: true}
+    (mock, credited immediately).
 
-    `amount_cents` is the amount in USD cents the advertiser is paying.
+    `amount_cents` is the amount in USD cents being paid.
     """
     if amount_cents < 100:  # enforce a $1 minimum
         raise ValueError("top-up must be at least $1")
     if backend() == "stripe":
-        return _stripe_create_topup(advertiser_email, amount_cents)
+        return _stripe_create_topup(entity, amount_cents, kind=kind)
     # mock: credit immediately, return a fake session id.
-    session_id = "mock_session_" + advertiser_email.replace("@", "_") + "_" + str(amount_cents)
-    credit_balance(advertiser_email, amount_cents, source="topup_mock",
-                   note=f"mock top-up ${amount_cents/100:.2f}")
+    session_id = "mock_session_" + entity.replace("@", "_") + "_" + str(amount_cents)
+    credit_balance(entity, amount_cents, source="topup_mock",
+                   note=f"mock top-up ${amount_cents/100:.2f}", entity_kind=kind)
     return {"session_id": session_id, "amount_cents": amount_cents, "credited": True}
 
 
-def credit_balance(advertiser_email: str, amount_cents: int, source: str, note: str = "") -> None:
+def sponsor_pass_through(user_entity: str, amount: float, note: str = "") -> None:
+    """Credit sponsor money back to a user's balance (the actual discount).
+    Recorded as a distinct source so settlement + dashboards can separate
+    top-ups from ad-funded credits."""
+    if amount <= 0:
+        return
+    log_payment({
+        "advertiser": user_entity,
+        "delta": round(amount, 8),
+        "kind": "credit",
+        "source": "sponsor_pass_through",
+        "note": note,
+    })
+
+
+def credit_balance(advertiser_email: str, amount_cents: int, source: str,
+                   note: str = "", entity_kind: str = "") -> None:
     """Credit an advertiser's balance (positive delta). Called on confirmed payment."""
     if amount_cents <= 0:
         return
-    log_payment({
+    row = {
         "advertiser": advertiser_email,
         "delta": amount_cents / 100.0,
         "kind": "credit",
         "source": source,
         "note": note,
-    })
+    }
+    if entity_kind:
+        row["entity_kind"] = entity_kind
+    log_payment(row)
 
 
 def debit_balance(advertiser_email: str, amount_cents: int, source: str, note: str = "") -> None:
@@ -111,7 +177,7 @@ def debit_balance(advertiser_email: str, amount_cents: int, source: str, note: s
 # Stripe backend (lazy import; only when keys are set)
 # ---------------------------------------------------------------------------
 
-def _stripe_create_topup(advertiser_email: str, amount_cents: int) -> dict:
+def _stripe_create_topup(advertiser_email: str, amount_cents: int, kind: str = "user") -> dict:
     try:
         import stripe
     except ImportError:
@@ -130,7 +196,7 @@ def _stripe_create_topup(advertiser_email: str, amount_cents: int) -> dict:
         }],
         success_url=config.PUBLIC_HOST.rstrip("/") + "/advertiser/topup/success",
         cancel_url=config.PUBLIC_HOST.rstrip("/") + "/portal",
-        metadata={"advertiser": advertiser_email},
+        metadata={"advertiser": advertiser_email, "entity_kind": kind},
     )
     return {"session_id": session.id, "url": session.url}
 
@@ -151,9 +217,11 @@ def handle_webhook(payload: bytes, sig_header: str) -> dict:
     if event["type"] == "checkout.session.completed":
         sess = event["data"]["object"]
         advertiser = sess.get("metadata", {}).get("advertiser")
+        entity_kind = sess.get("metadata", {}).get("entity_kind", "")
         amount = sess.get("amount_total", 0)
         if advertiser:
             credit_balance(advertiser, amount, source="stripe",
-                           note=f"stripe session {sess.get('id')}")
+                           note=f"stripe session {sess.get('id')}",
+                           entity_kind=entity_kind)
             return {"ok": True, "event_type": event["type"], "credited": True}
     return {"ok": True, "event_type": event["type"]}

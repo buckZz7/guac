@@ -7,6 +7,7 @@ os.chdir(ROOT)
 td = tempfile.mkdtemp()
 os.environ["ADGATE_SUPPLIERS_FILE"] = os.path.join(td, "suppliers.json")
 os.environ["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
+os.environ["ADGATE_ALLOW_DEMO_ADS"] = "1"  # this test exercises the demo fallback
 
 from fastapi.testclient import TestClient
 import gateway
@@ -28,8 +29,8 @@ print("PASS  /terms and /privacy render")
 # 1c) marketing landing at / renders
 r = c.get("/")
 assert r.status_code == 200, r.status_code
-assert "Pay less for AI" in r.text
-assert "Get started free" in r.text
+assert "Pay wholesale for AI" in r.text
+assert "Get started" in r.text
 assert "/terms" in r.text and "/privacy" in r.text
 print("PASS  marketing home at / renders (hero + CTAs + footer)")
 
@@ -58,8 +59,17 @@ assert "name=\"intents\"" not in html, "intents field should be removed"
 print("PASS  advertiser offer form has image_url/link + pitch link (no intents)")
 
 # 4) create an offer through the portal with the new fields, verify stored
+# (form auth is the advertiser TOKEN — a bare email must NOT create offers)
 r = c.post("/portal/advertiser/offer", data={
-    "email": "adv@x.com", "headline": "50% off hosting", "body": "b",
+    "email": "adv@x.com", "headline": "spoofed", "body": "b",
+    "claim": "CODE", "budget": "5", "offer_type": "discount"})
+assert r.status_code == 200
+assert not gateway.portal._offers(), "email-only form must NOT create an offer"
+print("PASS  email-only offer form rejected (token required)")
+
+adv_token = adv["token"]
+r = c.post("/portal/advertiser/offer", data={
+    "token": adv_token, "headline": "50% off hosting", "body": "b",
     "claim": "CODE", "budget": "5", "offer_type": "discount",
     "image_url": "https://x/y.png",
     "link": "https://x/agent"})
@@ -72,7 +82,7 @@ print("PASS  offer stored with image_url + link")
 
 # 5) invalid link rejected
 r = c.post("/portal/advertiser/offer", data={
-    "email": "adv@x.com", "headline": "bad link", "body": "b",
+    "token": adv_token, "headline": "bad link", "body": "b",
     "claim": "C", "budget": "5", "link": "javascript:alert(1)"})
 assert r.status_code == 200, r.status_code  # renders dashboard with error
 offers = gateway.portal._offers()

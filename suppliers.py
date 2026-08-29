@@ -28,7 +28,7 @@ RECOVERY_COOLDOWN_S = 300.0
 
 class Supplier:
     def __init__(self, name, base_url, key="", bid=1.0, min_score=0.0,
-                 warmup_successes=1, model=None, key_env=None):
+                 warmup_successes=1, model=None, key_env=None, passthrough=False):
         self.name = name
         self.base_url = base_url.rstrip("/")
         # key can be given directly, or loaded from an env var by name.
@@ -38,6 +38,10 @@ class Supplier:
         self.min_score = float(min_score)
         self.warmup_successes = int(warmup_successes)
         self.model = model               # default model slug for this supplier
+        # Passthrough: a client-requested model slug is forwarded UNCHANGED to
+        # this supplier (any model the provider offers). Non-passthrough
+        # suppliers only ever serve their pinned model.
+        self.passthrough = bool(passthrough)
         # runtime stats (also persisted via pool.save_state)
         self.successes = 0
         self.failures = 0
@@ -109,6 +113,7 @@ class Supplier:
             "base_url": self.base_url,
             "key_env": self.key_env,
             "model": self.model,
+            "passthrough": self.passthrough,
             "bid": self.bid,
             "min_score": self.min_score,
             "warmup_successes": self.warmup_successes,
@@ -123,7 +128,8 @@ class Supplier:
         s = cls(d["name"], d["base_url"], d.get("key", ""),
                 d.get("bid", 1.0), d.get("min_score", 0.0),
                 d.get("warmup_successes", 1),
-                d.get("model"), d.get("key_env"))
+                d.get("model"), d.get("key_env"),
+                passthrough=d.get("passthrough", False))
         s.successes = d.get("successes", 0)
         s.failures = d.get("failures", 0)
         s.total_latency_ms = d.get("total_latency_ms", 0.0)

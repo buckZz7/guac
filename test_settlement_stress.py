@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Stress-test guac settlement with a realistic synthetic month of ledger data.
+"""Stress test: settlement on a synthetic month of billing rows.
 
-Generates many users, multiple offers with varying per-impression costs, mixed
-sponsored/plain requests, and edge cases (budget-exhausted offers, rows without
-a recorded impression cost, high-token outlier requests). Verifies that:
-  - money always conserves: user_paid + ad_revenue == wholesale + fee + surplus
-  - ad revenue is sourced from real per-impression ledger costs when present
-  - no negative user_paid, no negative savings, breakdown sums to user_saving
-  - a mid-month change in impression cost is respected
+Invariants that MUST hold for any generated data (no payments ledger, so
+settlement reconstructs from ledger bill rows + impression costs):
+  - ad_revenue == sum of recorded impression costs (+ rows without cost get 0)
+  - guac_fee == GUAC_AD_FEE_FRACTION of ad_revenue
+  - sponsor_credits == ad_revenue - guac_fee
+  - user_paid + subsidy_used == sum(bill.cost) over rows that have bills
+  - user_saving == subsidy_used (the token discount IS advertiser money)
+  - nothing negative
 """
 import datetime as _dt
 import json
@@ -15,20 +16,20 @@ import os
 import random
 import tempfile
 
-# Isolate: fresh temp payments ledger so settlement falls back to per-row cost.
 os.environ["ADGATE_PAYMENTS_LEDGER"] = os.path.join(tempfile.mkdtemp(), "payments.jsonl")
 
+import config
 import settlement
 
 random.seed(42)
 
 
 def gen_month(days=28, users=12, offers=3):
-    """Return a list of ledger rows resembling a real usage month."""
+    """Return ledger rows resembling a real usage month, WITH real bills."""
     rows = []
     now = _dt.datetime.now(_dt.timezone.utc)
     impression_costs = [0.01, 0.02, 0.05]  # per offer
-    base_daily = 30  # avg requests/day across all users
+    base_daily = 30
     for day in range(days):
         ts = (now - _dt.timedelta(days=(days - day))).isoformat()
         n_req = max(1, int(random.gauss(base_daily, 8)))
@@ -36,90 +37,74 @@ def gen_month(days=28, users=12, offers=3):
             user = f"user{random.randrange(users)}"
             offer_idx = random.randrange(offers)
             sponsored = random.random() < 0.25
-            # token counts vary; occasional big outlier
             pt = int(random.gauss(3000, 1500))
             ct = int(random.gauss(1200, 600))
             if random.random() < 0.01:
                 pt = int(random.gauss(50000, 10000))  # outlier
+            pt, ct = max(1, pt), max(1, ct)
+            # Real bill: the request cost; the subsidy bucket covers what the
+            # user has earned, own money covers the rest.
+            cost = round((pt + ct) * config.PASSTHROUGH_WHOLESALE_PER_M / 1e6, 8)
+            subsidy_avail = round(random.random() * cost, 8) if random.random() < 0.3 else 0.0
+            subsidy_used = min(subsidy_avail, cost)
+            bill = {"cost": cost, "user_paid": round(cost - subsidy_used, 8),
+                    "subsidy_used": subsidy_used, "unpaid": False}
             row = {
                 "ts": ts, "user": user,
                 "sponsored": sponsored,
-                "prompt_tokens": max(1, pt), "completion_tokens": max(1, ct),
-                "discount_rate": 0.20 if sponsored else 0.0,
+                "prompt_tokens": pt, "completion_tokens": ct,
+                "bill": bill,
             }
             if sponsored:
                 row["sponsor"] = f"Offer {offer_idx}"
                 # 1% chance a row is missing its impression cost (edge case)
-                if random.random() < 0.01:
-                    pass  # deliberately no impression_cost
-                else:
+                if random.random() >= 0.01:
                     row["impression_cost"] = impression_costs[offer_idx]
             rows.append(row)
     return rows
-
-
-def check_conservation(s, n_ads, total_tk):
-    wholesale_cost = s["wholesale_cost"]
-    surplus = s["savings_breakdown"]["ad_surplus_carried_forward"]
-    lhs = s["user_paid"] + s["ad_revenue"]
-    rhs = wholesale_cost + s["guac_fee"] + surplus
-    if abs(lhs - rhs) > 0.02:  # 2 cents rounding tolerance
-        raise AssertionError(f"conservation violated: {lhs} != {rhs}")
 
 
 def main():
     rows = gen_month()
     total_tk = sum(r["prompt_tokens"] + r["completion_tokens"] for r in rows)
     n_ads = sum(1 for r in rows if r["sponsored"])
-    n_missing_cost = sum(1 for r in rows if r["sponsored"] and "impression_cost" not in r)
+    n_missing = sum(1 for r in rows if r["sponsored"] and "impression_cost" not in r)
+    exp_ad_rev = sum(r.get("impression_cost", 0.0) for r in rows if r["sponsored"])
+    exp_billed = sum(r["bill"]["cost"] for r in rows)
 
     print(f"synthetic month: {len(rows)} requests, {n_ads} sponsored "
-          f"({n_missing_cost} without recorded cost), {total_tk:,} tokens")
+          f"({n_missing} without recorded cost), {total_tk:,} tokens")
 
     s = settlement.settle(rows)
-    print(f"  ad_revenue=${s['ad_revenue']:.2f}  guac_fee=${s['guac_fee']:.2f}  "
-          f"user_paid=${s['user_paid']:.2f}  saving=${s['user_saving']:.2f}")
+    print(f"  ad_revenue=${s['ad_revenue']:.4f}  fee=${s['guac_fee']:.4f}  "
+          f"credits=${s['sponsor_credits']:.4f}  billed=${s['total_inference_billed']:.4f}")
 
-    # money conservation
-    check_conservation(s, n_ads, total_tk)
-    print("  conservation (user_paid + ad_rev == wholesale + fee + surplus): ✓")
+    # advertiser side
+    assert abs(s["ad_revenue"] - exp_ad_rev) < 1e-6, (s["ad_revenue"], exp_ad_rev)
+    assert abs(s["guac_fee"] - s["ad_revenue"] * config.GUAC_AD_FEE_FRACTION) < 1e-6
+    assert abs(s["guac_fee"] + s["sponsor_credits"] - s["ad_revenue"]) < 1e-6
+    print("advertiser conservation (fee + credits == revenue): PASS")
 
-    # no negative values
-    assert s["user_paid"] >= 0, "negative user_paid"
-    assert s["user_saving"] >= 0, "negative saving"
-    assert s["ad_revenue"] >= 0 and s["guac_fee"] >= 0
-    print("  no negative money values: ✓")
+    # user side: bills reconstructed from ledger rows
+    assert abs(s["total_inference_billed"] - exp_billed) < 1e-4, \
+        (s["total_inference_billed"], exp_billed)
+    assert abs(s["user_paid"] + s["subsidy_used"] - s["total_inference_billed"]) < 1e-6
+    print("user conservation (paid + subsidy == billed): PASS")
 
-    # breakdown sums exactly to user_saving
-    bd = s["savings_breakdown"]
-    assert abs((bd["from_cheap_supply"] + bd["from_ads"]) - s["user_saving"]) < 0.02, \
-        (bd, s["user_saving"])
-    print("  savings breakdown sums to user_saving: ✓")
+    # the discount is advertiser money, exactly
+    assert abs(s["user_saving"] - s["subsidy_used"]) < 1e-9
+    print("user_saving == subsidy_used: PASS")
 
-    # ad revenue is from real per-impression costs (not the 0.30 fallback)
-    recorded = sum(r.get("impression_cost", 0.0)
-                   for r in rows if r["sponsored"])
-    # rows missing cost fall back to 0.30 each
-    expected_adrev = round(recorded + n_missing_cost * 0.30, 2)
-    assert abs(s["ad_revenue"] - expected_adrev) < 0.02, \
-        (s["ad_revenue"], expected_adrev)
-    print(f"  ad revenue from ledger costs ({recorded:.2f}) + {n_missing_cost} fallback rows: ✓")
+    # nothing negative
+    for k, v in s.items():
+        if isinstance(v, (int, float)):
+            assert v >= 0, (k, v)
+    assert s["requests"] == len(rows) and s["ads_delivered"] == n_ads
+    assert s["tokens_total"] == total_tk
+    assert s["period"] == "lifetime"
+    print("non-negativity + counts: PASS")
 
-    # mid-month impression cost change is respected (per-row, not global)
-    rows2 = list(rows)
-    # force two clearly-different costs
-    for i, r in enumerate(rows2):
-        if r["sponsored"] and i < len(rows2) // 2:
-            r["impression_cost"] = 0.01
-        elif r["sponsored"]:
-            r["impression_cost"] = 0.10
-    s2 = settlement.settle(rows2)
-    expected2 = sum(r.get("impression_cost", 0.30)
-                    for r in rows2 if r["sponsored"])
-    assert abs(s2["ad_revenue"] - round(expected2, 2)) < 0.05, (s2["ad_revenue"], expected2)
-    print("  mid-month impression cost change respected: ✓")
-
-    print("\nSETTLEMENT STRESS TEST PASSED (synthetic month)")
+    print("\nSETTLEMENT STRESS TESTS PASSED")
 
 
 if __name__ == "__main__":

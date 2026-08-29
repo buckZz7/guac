@@ -106,8 +106,7 @@ def main():
         assert tp.status_code == 200 and tp.json().get("credited"), tp.text
         r = httpx.post(GW + "/advertiser/offer",
                        headers={"authorization": f"Bearer {adv_token}"},
-                       json={"headline": "10% off", "budget": 0.03,
-                             "intents": ["hosting"]})  # 3 impressions at 0.01
+                       json={"headline": "10% off", "budget": 0.15})
         assert r.status_code == 200, r.text
         oid = r.json()["offer_id"]
         print("create offer:", oid, "✓")
@@ -122,13 +121,14 @@ def main():
         assert r.json().get("guac", {}).get("sponsored")
         print("sponsored completion served:", "✓")
 
-        # 6) stats show 1 impression, spent 0.01, and a click funnel
+        # 6) stats show 1 impression, spent = one impression cost, and a click funnel
+        import config as _config
         st = httpx.get(GW + "/advertiser/stats",
                        headers={"authorization": f"Bearer {adv_token}"}).json()
         o = next(x for x in st["offers"] if x["id"] == oid)
-        assert o["impressions"] == 1 and abs(o["spent"] - 0.01) < 1e-6, o
+        assert o["impressions"] == 1 and abs(o["spent"] - _config.IMPRESSION_COST) < 1e-6, o
         assert o.get("funnel", {}).get("clicked", 0) == 0, o  # funnel present
-        print("per-impression billed (1 imp, $0.01):", "✓")
+        print("per-impression billed (1 imp @ impression cost):", "✓")
         print("advertiser stats include click funnel:", "✓")
 
         # 6b) attribution records a click -> advertiser funnel reflects it

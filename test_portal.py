@@ -76,8 +76,18 @@ def main():
         assert r2.status_code == 409, r2.status_code
         print("dup email rejected: ✓")
 
-        # 3) user key authenticates inference
+        # 3) user key authenticates inference (paid-with-discount: top up first)
         auth = {"authorization": f"Bearer {alice_key}"}
+        tp = c.post("/user/topup", json={"amount_cents": 500}, headers=auth)
+        assert tp.status_code == 200 and tp.json()["credited"] is True, tp.text
+        # empty-balance gate: a fresh unfunded user gets 402, not inference
+        import portal as _portal
+        u2, _ = _portal.create_user("bob@example.com")
+        r402 = c.post("/v1/chat/completions", json={
+            "model": "stub", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"authorization": f"Bearer {u2['api_key']}"})
+        assert r402.status_code == 402, (r402.status_code, r402.text)
+        print("unfunded user gets 402 insufficient_balance: ✓")
         rr = c.post("/v1/chat/completions", json={
             "model": "stub",
             "messages": [{"role": "user", "content": "hi"}],

@@ -48,15 +48,18 @@ def _user_id(request: Request) -> str:
 
 def _active_offers():
     """Active offers with advertiser demand (budget remaining): from the portal
-    store, falling back to static ads.json if no portal offers are configured.
-    Offers are the source of demand — no active funded offer = no ads."""
+    store. The static ads.json demo inventory is ONLY served when explicitly
+    enabled (ADGATE_ALLOW_DEMO_ADS=1) — production must never show unfunded,
+    unaffiliated offers. No active funded offer = no ads."""
     portal_offers = [o for o in portal._offers()
                      if o.get("active") and not o.get("paused")
                      and o.get("spent", 0) < o.get("budget", 0)]
     if portal_offers:
         return portal_offers
-    return [a for a in config.load_ads()
-            if a.get("active", True) and not a.get("paused", False)]
+    if config.ALLOW_DEMO_ADS:
+        return [a for a in config.load_ads()
+                if a.get("active", True) and not a.get("paused", False)]
+    return []
 
 
 # --- Demand-gated daily cadence (V1) ---
@@ -145,13 +148,65 @@ def _footer_text(ad):
         lines.append(f"![{sponsor}]({ad['image_url']})")
     if ad.get("link"):
         # Route the link through /go/<offer_id> so the click is logged (honest
-        # funnel) before redirecting to the advertiser's destination.
-        lines.append(f"[Learn more](/go/{ad['id']})")
+        # funnel) before redirecting. The link must be ABSOLUTE: the delivery
+        # surface is a terminal/chat client where a relative path is dead.
+        base = (config.PUBLIC_HOST or "http://127.0.0.1:8000").rstrip("/")
+        lines.append(f"[Learn more]({base}/go/{ad['id']})")
     return "\n".join(lines) + "\n"
 
 
 def _words(s):
     return len((s or "").split())
+
+
+# The sponsorship footer guac appends below an answer always starts with this
+# delimiter. Agents (Hermes etc.) replay whole session histories into context,
+# so an old footer would otherwise re-enter the model AND get billed as tokens
+# forever. The gateway owns the wire: strip its own footers from inbound
+# assistant history before forwarding.
+_FOOTER_MARK = "\n---\nSponsor: "
+
+
+def _strip_footers_from_content(content):
+    if isinstance(content, str):
+        idx = content.find(_FOOTER_MARK)
+        if idx != -1:
+            return content[:idx]
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                p = dict(part)
+                p["text"] = _strip_footers_from_content(p["text"])
+                out.append(p)
+            else:
+                out.append(part)
+        return out
+    return content
+
+
+def _strip_replayed_footers(body):
+    """Return the body with guac's own sponsor footers removed from assistant
+    history (inbound messages only — the outbound answer is untouched)."""
+    messages = body.get("messages")
+    if not messages:
+        return body
+    cleaned = []
+    changed = False
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("content"):
+            new_content = _strip_footers_from_content(m["content"])
+            if new_content != m["content"]:
+                m = dict(m)
+                m["content"] = new_content
+                changed = True
+        cleaned.append(m)
+    if not changed:
+        return body
+    body = dict(body)
+    body["messages"] = cleaned
+    return body
 
 
 def _valid_https_url(url):
@@ -195,6 +250,52 @@ def _prompt_tokens(body):
                 if isinstance(p, dict) and p.get("text"):
                     n += len(str(p["text"]).split())
     return n
+
+
+def _billable_user(uid):
+    """Only real user accounts are billed. The master gateway key (operator)
+    and advertiser identities are not billed for inference."""
+    return uid and uid != "master" and not uid.startswith("advertiser:")
+
+
+def _request_cost(supplier, body, usage, completion_words=None):
+    """Real wholesale USD cost of one served request.
+    Pinned suppliers: per-supplier $/M pricing from config.MODEL_PRICING.
+    Passthrough suppliers: the supplier-reported usage.cost when present
+    (OpenRouter returns real cost), else the flat blended wholesale rate."""
+    prompt_tk = usage.get("prompt_tokens", 0) or _prompt_tokens(body)
+    completion_tk = usage.get("completion_tokens", 0)
+    if not completion_tk and completion_words:
+        completion_tk = completion_words
+    price = config.MODEL_PRICING.get(supplier.name)
+    if price:
+        p_per_m, c_per_m = price
+        return (prompt_tk * p_per_m + completion_tk * c_per_m) / 1_000_000
+    cost = usage.get("cost")
+    if isinstance(cost, (int, float)) and cost > 0:
+        return float(cost)
+    return (prompt_tk + completion_tk) * config.PASSTHROUGH_WHOLESALE_PER_M / 1_000_000
+
+
+def _settle_user_bill(uid, cost, model, supplier_name, sponsored_meta=None):
+    """Bill one request to the user's prepaid balance (ad subsidy drawn first).
+    Returns the bill dict recorded in the ledger. If the balance can't cover
+    it, the row is marked unpaid — the pre-flight gate 402s the NEXT request,
+    so at most one request rides slightly past the balance."""
+    res = payments.charge_request(uid, cost, note=f"{model} via {supplier_name}")
+    bill = {
+        "cost": round(cost, 8),
+        "user_paid": res["user_paid"],
+        "subsidy_used": res["subsidy_used"],
+        "unpaid": (not res["charged"]),
+    }
+    if sponsored_meta and res["charged"]:
+        # Sponsor money subsidizes THIS user's future tokens: guac keeps its
+        # fee fraction, the rest is credited to the user's subsidy bucket.
+        pass_through = config.IMPRESSION_COST * (1.0 - config.GUAC_AD_FEE_FRACTION)
+        payments.sponsor_pass_through(uid, pass_through, note=sponsored_meta)
+        bill["sponsor_credit"] = round(pass_through, 8)
+    return bill
 
 
 # ---------------------------------------------------------------------------
@@ -250,17 +351,33 @@ async def chat_completions(request: Request):
     # Auth: the agent sends a guac API key (user key or master gateway key).
     auth = request.headers.get("authorization", "")
     api_key = auth[7:] if auth.startswith("Bearer ") else ""
-    user_id = portal.verify_gateway_key(api_key) if api_key else None
-    if not user_id:
+    billing_id = portal.verify_gateway_key(api_key) if api_key else None
+    if not billing_id:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
-    # use the header x-user-id if present, else the account identity
+    # Billing identity is the KEY OWNER. x-user-id may override identity only
+    # for the master key (operator/testing) — otherwise a user could bill their
+    # requests to someone else's balance by spoofing the header.
     header_user = request.headers.get(config.USER_ID_HEADER)
-    user_id = header_user if header_user else user_id
+    uid = header_user if (header_user and billing_id == "master") else billing_id
 
     body = await request.json()
+    # Hermes-style clients replay full session history: strip guac's own sponsor
+    # footers from inbound assistant turns so ad text never re-enters the model
+    # and is never billed as tokens twice.
+    body = _strip_replayed_footers(body)
     stream = bool(body.get("stream", False))
-    uid = user_id
     model = body.get("model", "guac")
+
+    # Paid-with-discount: real user accounts prepay for inference. Empty
+    # balance -> 402 with a pointer to top up. Sponsor money lands in their
+    # subsidy bucket and is drawn FIRST when requests are billed, so it is
+    # literally what discounts their tokens. Master key (operator) and
+    # advertiser identities are never gated or billed here.
+    if _billable_user(billing_id) and payments.balance_for(billing_id) <= 0:
+        return JSONResponse({"error": {
+            "message": "balance empty — top up in the portal to keep using guac",
+            "code": "insufficient_balance",
+        }}, status_code=402)
 
     # Per-key daily token budget: reject before forwarding if this key would
     # exceed its cap. Uses the prompt size as a conservative estimate so a key
@@ -273,16 +390,25 @@ async def chat_completions(request: Request):
 
     # V1 (decision-point): we do NOT inject anything into the model. The
     # request forwards unchanged; a sponsorship is appended BELOW the answer
-    # only when the answer is a final turn that hands off to the user AND an
-    # offer's intent matches the decision text.
+    # only on a final turn (finish_reason == "stop") when funded demand exists.
 
     # Forward to the best healthy supplier, with failover across the pool.
+    generic_model = model.lower() in ("guac", "default", "")
     headers = {"content-type": "application/json"}
     ordered = POOL.ordered()
+    # Model routing: a generic request ("guac") prefers suppliers that pin a
+    # real model slug (substituted for the request); if none exist, the model
+    # name forwards as-is (stub/development providers). A SPECIFIC model slug
+    # only goes to suppliers that serve it unchanged: passthrough suppliers,
+    # or suppliers with no pinned model (nothing to substitute).
+    if generic_model:
+        candidates = [s for s in ordered if s.model] or ordered
+    else:
+        candidates = [s for s in ordered if not s.model or s.passthrough]
     last_error = None
     chosen = None
 
-    for supplier in ordered:
+    for supplier in candidates:
         # Skip a supplier that expects a key from the environment but has none
         # configured — it can never authenticate and would hang / fail upstream,
         # so fail fast to a supplier that can serve. Suppliers with no key at
@@ -294,10 +420,8 @@ async def chat_completions(request: Request):
         if supplier.key:
             sup_headers["authorization"] = f"Bearer {supplier.key}"
         upstream = f"{supplier.base_url}/chat/completions"
-        # Model routing: if the supplier pins a model and the client asked for
-        # a generic/guac model, substitute the supplier's real model slug.
         sup_body = body
-        if supplier.model and model.lower() in ("guac", "default", ""):
+        if generic_model and supplier.model:
             sup_body = dict(body)
             sup_body["model"] = supplier.model
         t0 = time.monotonic()
@@ -354,15 +478,28 @@ async def chat_completions(request: Request):
                                 offer = _should_show_ad(uid)[1]
                             sponsor = None
                             impression_cost = 0.0
+                            sponsored_meta = None
                             if offer:
                                 sponsor = offer.get("advertiser") or offer.get("sponsor")
                                 _o, impression_cost = portal.charge_impression(offer["id"])
+                                sponsored_meta = f"offer {offer['id']}"
                                 footer = _footer_text(offer)
                                 fe = {"id": "cmpl-guac", "object": "chat.completion.chunk",
                                       "created": 0, "model": model,
                                       "choices": [{"index": 0, "delta": {"content": footer},
                                                    "finish_reason": None}]}
                                 yield f"data: {json.dumps(fe)}\n\n".encode()
+                            # Paid-with-discount billing: real wholesale cost of
+                            # this request (SSE has no usage block, so cost is
+                            # estimated from tokens; streams don't report
+                            # usage.cost), billed to the user's balance with
+                            # the ad subsidy bucket drawn first.
+                            bill = None
+                            if _billable_user(billing_id):
+                                s_cost = _request_cost(chosen, body, {},
+                                                       completion_words=_words(full))
+                                bill = _settle_user_bill(billing_id, s_cost, model,
+                                                         chosen.name, sponsored_meta)
                             config.log_ledger({
                                 "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
                                 "user": uid,
@@ -370,9 +507,10 @@ async def chat_completions(request: Request):
                                 "sponsor": sponsor,
                                 "impression_cost": impression_cost,
                                 "supplier": chosen.name,
+                                "model": model,
                                 "prompt_tokens": _prompt_tokens(body),
                                 "completion_tokens": _words(full),
-                                "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
+                                "bill": bill,
                             })
                             limits.record_tokens(api_key or uid,
                                                  _prompt_tokens(body) + _words(full))
@@ -421,19 +559,29 @@ async def chat_completions(request: Request):
 
     sponsor = None
     impression_cost = 0.0
+    sponsored_meta = None
     if offer:
         sponsor = offer.get("advertiser") or offer.get("sponsor")
         # Per-impression billing: record one delivered impression against the
         # offer, capturing the actual amount charged so settlement can compute
         # real ad revenue (not a hardcoded per-offer estimate).
         _o, impression_cost = portal.charge_impression(offer["id"])
+        sponsored_meta = f"offer {offer['id']}"
         # Append the disclosed footer BELOW the model answer, delimited by ---.
         data["choices"][0]["message"]["content"] = content + _footer_text(offer)
         data["guac"] = {
             "sponsored": True,
-            "discount_rate": config.DISCOUNT_RATE,
             "sponsorship": _human_payload(offer),
         }
+
+    # Paid-with-discount billing: real wholesale cost billed to the user's
+    # balance (ad subsidy drawn first); the sponsor pass-through credit is
+    # applied by _settle_user_bill when this answer carried a sponsor.
+    cost = _request_cost(chosen, body, usage)
+    bill = _settle_user_bill(billing_id, cost, model, chosen.name,
+                             sponsored_meta) if _billable_user(billing_id) else None
+    if bill and bill.get("subsidy_used"):
+        data.setdefault("guac", {})["subsidy_used"] = bill["subsidy_used"]
     config.log_ledger({
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "user": uid,
@@ -441,9 +589,10 @@ async def chat_completions(request: Request):
         "sponsor": sponsor,
         "impression_cost": impression_cost,
         "supplier": chosen.name,
+        "model": model,
         "prompt_tokens": prompt_tk,
         "completion_tokens": completion_tk,
-        "discount_rate": config.DISCOUNT_RATE if offer else 0.0,
+        "bill": bill,
     })
     limits.record_tokens(api_key or uid, prompt_tk + completion_tk)
     return JSONResponse(data)
@@ -548,7 +697,6 @@ async def create_advertiser_offer(request: Request):
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
     body = await request.json()
     offer_type = (body.get("offer_type") or "discount").strip()
-    intents = body.get("intents", [])
     cleaned, err = _safe_offer_fields(body.get("headline"), body.get("body"),
                                       body.get("claim"), body.get("image_url"),
                                       body.get("link"))
@@ -563,7 +711,7 @@ async def create_advertiser_offer(request: Request):
     except (TypeError, ValueError):
         return JSONResponse({"error": {"message": "budget must be a number"}}, status_code=400)
     offer = portal.create_offer(advertiser_email, cleaned["headline"], cleaned["body"],
-                                cleaned["claim"], budget, offer_type, intents,
+                                cleaned["claim"], budget, offer_type, [],
                                 cleaned["image_url"], cleaned["link"])
     return {"offer_id": offer["id"], "budget": offer["budget"], "status": "created"}
 
@@ -605,7 +753,7 @@ async def advertiser_topup(request: Request):
         return JSONResponse({"error": {"message": "amount_cents must be an integer"}},
                             status_code=400)
     try:
-        result = payments.create_topup(advertiser_email, amount_cents)
+        result = payments.create_topup(advertiser_email, amount_cents, kind="advertiser")
     except ValueError as e:
         return JSONResponse({"error": {"message": str(e)}}, status_code=400)
     except Exception as e:
@@ -615,6 +763,53 @@ async def advertiser_topup(request: Request):
     if "application/json" not in ctype:
         return HTMLResponse(f"<h2>Balance updated to ${result['balance']:.2f}</h2>"
                             f"<p><a href='/portal'>Back to portal</a></p>")
+    return result
+
+
+@app.post("/user/topup")
+async def user_topup(request: Request):
+    """Top up a USER's inference balance. Auth: user API key (Bearer) or the
+    portal session cookie. Same mechanics as the advertiser top-up: mock
+    backend credits immediately; stripe backend returns a Checkout URL."""
+    user_email = None
+    auth = request.headers.get("authorization", "")
+    api_key = auth[7:] if auth.startswith("Bearer ") else ""
+    ctype = request.headers.get("content-type", "")
+    if api_key:
+        u = portal.get_user_by_key(api_key)
+        user_email = u["email"] if u else None
+    if not user_email:
+        session = _cookie(request, "guac_session")
+        s_role, s_email = oauth.verify_session_cookie(session)
+        if s_role == "user" and s_email:
+            user_email = s_email
+    if not user_email and "application/json" not in ctype:
+        form = await request.form()
+        u = portal.get_user_by_key((form.get("api_key") or "").strip())
+        user_email = u["email"] if u else None
+    if not user_email:
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    if "application/json" in ctype:
+        body = await request.json()
+        amount_raw = body.get("amount_cents", 0)
+    else:
+        form = await request.form()
+        amount_raw = form.get("amount_cents", 0)
+    try:
+        amount_cents = int(amount_raw)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": {"message": "amount_cents must be an integer"}},
+                            status_code=400)
+    try:
+        result = payments.create_topup(user_email, amount_cents, kind="user")
+    except ValueError as e:
+        return JSONResponse({"error": {"message": str(e)}}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": {"message": f"payment error: {e}"}},
+                            status_code=502)
+    result["balance"] = payments.balance_for(user_email)
+    if "application/json" not in ctype:
+        return RedirectResponse("/portal/user/dash", status_code=303)
     return result
 
 
@@ -933,6 +1128,25 @@ async def auth_callback(request: Request):
     return resp
 
 
+def _user_money(email):
+    """Real money numbers for the user dashboard: balance split + lifetime
+    savings drawn from the payments ledger (subsidy consumed by billing)."""
+    own, subsidy = payments.user_balance_parts(email)
+    saved = 0.0
+    if config.PAYMENTS_LEDGER.exists():
+        for line in config.PAYMENTS_LEDGER.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("advertiser") == email and row.get("source") == "subsidy_used":
+                saved += -row.get("delta", 0.0)
+    return own, subsidy, saved
+
+
 @app.get("/portal/{role}/dash")
 def role_dashboard(request: Request, role: str):
     """Authenticated dashboard for a role, from the session cookie."""
@@ -944,11 +1158,8 @@ def role_dashboard(request: Request, role: str):
         user = portal.get_user_by_email(email)
         if not user:
             return RedirectResponse("/portal", status_code=302)
-        savings = 0.0
-        for r in _read_ledger(config.LEDGER_FILE):
-            if r.get("user") == email and r.get("sponsored"):
-                savings += config.DISCOUNT_RATE
-        return portal_html.user_dashboard(user, savings)
+        own, subsidy, saved = _user_money(email)
+        return portal_html.user_dashboard(user, own, subsidy, saved)
     adv = portal.get_advertiser(email)
     if not adv:
         return RedirectResponse("/portal", status_code=302)
@@ -965,8 +1176,21 @@ def logout(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    """Marketing landing page."""
-    return portal_html.marketing_home()
+    """Marketing landing page, with the live ledger meter when there's data."""
+    stats = None
+    try:
+        rows = _read_ledger(config.LEDGER_FILE)
+        if rows:
+            subsidized = sum((r.get("bill") or {}).get("subsidy_used", 0.0)
+                             for r in rows)
+            stats = {
+                "requests": len(rows),
+                "impressions": sum(1 for r in rows if r.get("sponsored")),
+                "subsidized_usd": subsidized,
+            }
+    except Exception:
+        pass
+    return portal_html.marketing_home(stats)
 
 
 @app.get("/favicon.svg")
@@ -1026,12 +1250,8 @@ async def portal_user_auth(request: Request):
     user = portal.get_user_by_email(email)
     if not user:
         return portal_html.user_login_form(error="No such user")
-    # Savings: cheap-supply + ad money from the ledger for this user.
-    savings = 0.0
-    for r in _read_ledger(config.LEDGER_FILE):
-        if r.get("user") == email and r.get("sponsored"):
-            savings += config.DISCOUNT_RATE  # est. discount value per sponsored req
-    return portal_html.user_dashboard(user, savings)
+    own, subsidy, saved = _user_money(email)
+    return portal_html.user_dashboard(user, own, subsidy, saved)
 
 
 @app.post("/portal/advertiser/login", response_class=HTMLResponse)
@@ -1070,12 +1290,14 @@ async def portal_advertiser_auth(request: Request):
 @app.post("/portal/advertiser/offer", response_class=HTMLResponse)
 async def portal_advertiser_offer(request: Request):
     form = await request.form()
-    email = (form.get("email") or "").strip().lower()
-    offer_type = (form.get("offer_type") or "discount").strip()
-    intents = [k.strip() for k in (form.get("intents") or "").split(",") if k.strip()]
-    adv = portal.get_advertiser(email)
+    # Auth is the advertiser TOKEN (hidden form field), never a spoofable
+    # email field: anyone who knows an email could otherwise create offers
+    # on someone else's account.
+    adv = portal.get_advertiser_by_token((form.get("token") or "").strip())
     if not adv:
         return portal_html.advertiser_login_form(error="Not logged in")
+    email = adv["email"]
+    offer_type = (form.get("offer_type") or "discount").strip()
     cleaned, err = _safe_offer_fields(form.get("headline"), form.get("body"),
                                       form.get("claim"), form.get("image_url"),
                                       form.get("link"))
@@ -1095,7 +1317,7 @@ async def portal_advertiser_offer(request: Request):
                                                 error="Headline and positive budget required",
                                                 balance=payments.balance_for(email))
     offer = portal.create_offer(email, cleaned["headline"], cleaned["body"], cleaned["claim"],
-                                budget, offer_type, intents, cleaned["image_url"], cleaned["link"])
+                                budget, offer_type, [], cleaned["image_url"], cleaned["link"])
     return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                             created=offer["headline"],
                                             balance=payments.balance_for(email))
@@ -1104,11 +1326,13 @@ async def portal_advertiser_offer(request: Request):
 @app.post("/portal/advertiser/offer/{offer_id}/toggle", response_class=HTMLResponse)
 async def portal_advertiser_toggle(request: Request, offer_id: str):
     form = await request.form()
-    email = (form.get("email") or "").strip().lower()
-    adv = portal.get_advertiser(email)
+    # Token auth, same as offer creation: the form's hidden token field is
+    # the advertiser credential, and the offer must belong to that advertiser.
+    adv = portal.get_advertiser_by_token((form.get("token") or "").strip())
     offer = portal.get_offer(offer_id)
-    if not adv or not offer or offer.get("advertiser") != email:
+    if not adv or not offer or offer.get("advertiser") != adv["email"]:
         return portal_html.advertiser_login_form(error="Not authorized")
+    email = adv["email"]
     portal.set_offer_paused(offer_id, not offer.get("paused", False))
     return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
                                             balance=payments.balance_for(email))

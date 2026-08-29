@@ -115,10 +115,11 @@ def main():
         assert r.json().get("guac", {}).get("sponsored"), "funded offer should serve"
         print("PASS  funded offer serves + footer appended")
 
-        # 4) balance was debited (one impression at $0.01)
+        # 4) balance was debited (one impression at the configured rate)
+        import config as _config
         r = httpx.get(f"{GATEWAY}/advertiser/stats",
                       headers={"authorization": f"Bearer {tok}"}).json()
-        assert abs(r["balance"] - (5.0 - 0.01)) < 1e-6, r["balance"]
+        assert abs(r["balance"] - (5.0 - _config.IMPRESSION_COST)) < 1e-6, r["balance"]
         assert r["backend"] == "mock"
         assert r["offers"][0]["impressions"] == 1
         print("PASS  impression debits balance; stats show balance + impressions")

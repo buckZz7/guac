@@ -18,6 +18,22 @@ _BG = "#f8fafc"
 _CARD = "#ffffff"
 _BORDER = "#e2e8f0"
 
+# What a user earns per sponsored answer: the impression fee minus guac's cut.
+_SPONSOR_CREDIT = config.IMPRESSION_COST * (1.0 - config.GUAC_AD_FEE_FRACTION)
+
+
+def _icon(name):
+    """Inline SVG card icons (no emoji, consistent with the design system)."""
+    icons = {
+        "tag": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>",
+        "gift": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 12 20 22 4 22 4 12'/><rect x='2' y='7' width='20' height='5'/><line x1='12' y1='22' x2='12' y2='7'/><path d='M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z'/><path d='M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z'/></svg>",
+        "eye": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/></svg>",
+        "target": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='6'/><circle cx='12' cy='12' r='2'/></svg>",
+        "chart": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2' stroke-linecap='round'><line x1='18' y1='20' x2='18' y2='10'/><line x1='12' y1='20' x2='12' y2='4'/><line x1='6' y1='20' x2='6' y2='14'/></svg>",
+        "check": "<svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%s' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/></svg>",
+    }
+    return icons.get(name, "") % _ACCENT_DARK
+
 _CSS = f"""
 *{{box-sizing:border-box;margin:0}}
 body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -47,6 +63,10 @@ h1 .accent{{color:{_ACCENT}}}
 .cta{{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}}
 .trust{{margin-top:28px;font-size:.85rem;color:{_MUTED}}}
 .trust b{{color:{_INK}}}
+/* live meter strip */
+.meter{{background:{_CARD};border-block:1px solid {_BORDER};padding:18px 0;font-size:.92rem;color:{_MUTED}}}
+.meter b{{color:{_INK};font-size:1.05rem}}
+.meter .note{{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:{_ACCENT_DARK}}}
 /* sections */
 section{{padding:64px 0}}
 section.alt{{background:{_CARD};border-block:1px solid {_BORDER}}}
@@ -146,9 +166,9 @@ def _page(title, body, nav_links=()):
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="guac — pay less for AI. A disclosed sponsor follows some of your agent's answers and advertiser money lowers your inference cost. Point any OpenAI-compatible agent at one URL.">
-<meta property="og:title" content="guac — pay less for AI">
-<meta property="og:description" content="The ad-funded AI gateway. Disclosed sponsors, honest pricing, no ads in the model.">
+<meta name="description" content="guac — the ad-subsidized inference gateway. Pay wholesale for any model; disclosed sponsors under your agent's answers credit money back onto your balance. Point any OpenAI-compatible agent at one URL.">
+<meta property="og:title" content="guac — pay wholesale for AI, sponsored">
+<meta property="og:description" content="The ad-subsidized AI gateway. Real wholesale rates, sponsor credits drawn first, no ads in the model.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://addguac.fly.dev/">
 <link rel="icon" href="{favicon}">
@@ -162,7 +182,7 @@ def _page(title, body, nav_links=()):
 </div></nav>
 {body}
 <footer><div class="inner">
-  <div>guac — the ad-funded AI gateway. Disclosed sponsors, honest pricing, no ads in the model.</div>
+  <div>guac — the ad-subsidized inference gateway. Wholesale rates, sponsor credits, no ads in the model.</div>
   <div class="links">
     <a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/pitch">For advertisers</a><a href="https://github.com/buckZz7/guac">GitHub</a>
   </div>
@@ -170,33 +190,46 @@ def _page(title, body, nav_links=()):
 </body></html>"""
 
 
-def marketing_home():
-    """The marketing landing page served at /."""
-    body = """
+def marketing_home(stats=None):
+    """The marketing landing page served at /. `stats` optionally carries live
+    ledger numbers {"requests", "impressions", "subsidized_usd"} for the
+    public meter — omitted when the gateway has nothing to show yet."""
+    meter = ""
+    if stats and stats.get("requests", 0) > 0:
+        meter = f"""
+<div class="meter"><div class="container" style="display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:center">
+  <span><b>{stats['requests']:,}</b> requests served</span>
+  <span><b>{stats['impressions']:,}</b> sponsorships delivered</span>
+  <span><b>${stats['subsidized_usd']:.2f}</b> in ad money returned to users</span>
+  <span class="note">live from the guac ledger</span>
+</div></div>"""
+    body = f"""
 <div class="hero">
-  <span class="eyebrow">The ad-funded AI gateway</span>
-  <h1>Pay less for AI.<br>Advertisers cover part of the cost.</h1>
-  <p class="lede">guac sits between your agent and the model. A clearly-disclosed sponsor follows
-  some of your answers — never inside them — and that advertiser money lowers what you pay for
-  inference. Point any OpenAI-compatible agent at one URL and start saving.</p>
+  <span class="eyebrow">The ad-subsidized inference gateway</span>
+  <h1>Pay wholesale for AI.<br>Sponsors cover part of the bill.</h1>
+  <p class="lede">Point any OpenAI-compatible agent at one URL. You pay the real
+  wholesale cost of your tokens — and when your answer carries a disclosed sponsor,
+  that advertiser's money is credited straight onto your balance and spent first.
+  That's the discount: visible, metered, and never inside the model.</p>
   <div class="cta">
-    <a class="btn btn-primary" href="/portal">Get started free</a>
-    <a class="btn btn-ghost" href="#how">See how it works</a>
+    <a class="btn btn-primary" href="/portal">Get started</a>
+    <a class="btn btn-ghost" href="#pricing">See pricing</a>
   </div>
-  <p class="trust">No ads in the model · No credits or wallets · <b>Transparent, always</b></p>
+  <p class="trust">Never inside the model · Real wholesale rates · <b>Metered publicly</b></p>
 </div>
+{meter}
 
 <section id="how">
   <div class="container">
     <div class="sec-head"><h2>How it works</h2>
-      <p>Three simple steps. No client changes, no config drama.</p></div>
+      <p>Three steps. No client changes, no config drama.</p></div>
     <div class="steps">
-      <div class="step"><div class="num">1</div><h3>Point your agent at guac</h3>
-        <p>One base URL and an API key. Works with Hermes, Codex, OpenClaw, or any OpenAI-compatible client — no code changes.</p></div>
-      <div class="step"><div class="num">2</div><h3>Your agent answers normally</h3>
-        <p>The model output is never altered. No ads injected into your results, ever.</p></div>
-      <div class="step"><div class="num">3</div><h3>You pay less</h3>
-        <p>A disclosed <b>Sponsor:</b> footer follows a few answers each day. Advertiser money lowers your per-token cost.</p></div>
+      <div class="step"><div class="num">1</div><h3>Top up and connect</h3>
+        <p>Get an API key + base URL. Point Hermes, Codex, OpenClaw, or any OpenAI-compatible client at it.</p></div>
+      <div class="step"><div class="num">2</div><h3>Every request is billed at cost</h3>
+        <p>You pay the wholesale price of the tokens you used — nothing above it. Ask for any model by name and it's forwarded to the provider unchanged.</p></div>
+      <div class="step"><div class="num">3</div><h3>Sponsors shrink your bill</h3>
+        <p>A few answers a day carry a disclosed <b>Sponsor:</b> footer. That advertiser money lands on your balance and is spent before yours.</p></div>
     </div>
   </div>
 </section>
@@ -210,77 +243,93 @@ def marketing_home():
         <div class="a">The best pick depends on your needs — streaming, privacy, or speed. Here are my top recommendations...</div></div>
       <div class="sponsor">
         <span class="tag">Sponsor</span><br>
-        <b>NordVPN</b> — Get 66% off for 2 years + 4 months free<br>
-        <a href="/go/sponsor-nordvpn">Learn more</a>
+        <b>Acme VPN</b> — 50% off your first year<br>
+        <a href="/pitch">Learn more</a>
       </div>
     </div>
-    <p style="text-align:center;color:#64748b;margin-top:20px;font-size:.9rem">The model's answer stays byte-identical. Only the disclosed footer is added.</p>
+    <p style="text-align:center;color:#64748b;margin-top:20px;font-size:.9rem">Everything above the line is byte-identical to the model's output. The footer is the ad — and it pays you back.</p>
   </div>
 </section>
 
-<section>
+<section id="pricing">
   <div class="container">
-    <div class="sec-head"><h2>Why people use guac</h2></div>
+    <div class="sec-head"><h2>Pricing</h2>
+      <p>No markup, no subscription. You pay what the model costs, and sponsors lower it.</p></div>
     <div class="grid">
-      <div class="card"><div class="ic">💰</div><h3>Pay less for inference</h3>
-        <p>Advertiser money + cheap, quality-gated supply mean a lower price per token than going direct.</p></div>
-      <div class="card"><div class="ic">🔒</div><h3>No ads in your results</h3>
-        <p>Sponsors are always a separate, disclosed footer — never injected into the model's answer.</p></div>
-      <div class="card"><div class="ic">🛠️</div><h3>Works with your setup</h3>
-        <p>Any OpenAI-compatible agent. Hermes, Codex, OpenClaw, a raw CLI — it just works.</p></div>
-      <div class="card"><div class="ic">🕵️</div><h3>Honest by design</h3>
-        <p>Ads only run when funded. No fabricated impressions. The split is always public.</p></div>
+      <div class="card"><div class="ic">{_icon('tag')}</div><h3>Wholesale + nothing</h3>
+        <p>Your bill is the provider's actual cost for your tokens, metered per request. OpenRouter models report their real cost; fixed pools use published $/M rates.</p></div>
+      <div class="card"><div class="ic">{_icon('gift')}</div><h3>Sponsors pay you back</h3>
+        <p>Each sponsored answer credits ~${'{:.2f}'.format(_SPONSOR_CREDIT)} onto your balance — drawn before your own money. More sponsors, cheaper tokens.</p></div>
+      <div class="card"><div class="ic">{_icon('eye')}</div><h3>See every cent</h3>
+        <p>Your dashboard shows your balance, your sponsor credit, and what each request cost. The settlement ledger is operator-visible end to end.</p></div>
     </div>
   </div>
 </section>
 
-<section class="alt" id="code">
+<section class="alt" id="models">
   <div class="container">
-    <div class="sec-head"><h2>Get a key in seconds</h2>
-      <p>Sign up, get an API key + base URL, and point your agent at it.</p></div>
+    <div class="sec-head"><h2>Models</h2>
+      <p>Ask for a model, get that model.</p></div>
+    <div class="grid">
+      <div class="card"><h3>Frontier, pass-through</h3>
+        <p>Request any model slug — GPT, Claude, Gemini, Llama — and it's forwarded to the provider unchanged, billed at the real wholesale cost.</p></div>
+      <div class="card"><h3>Quality-gated open pools</h3>
+        <p>Cheap open-model suppliers sit behind a measured quality gate: latency + success rate. A degrading source is dropped until it recovers.</p></div>
+      <div class="card"><h3>No silent substitution</h3>
+        <p>If you ask for a specific model, you get it. Generic routing is only used when you ask for "guac".</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="code">
+  <div class="container">
+    <div class="sec-head"><h2>Get a key</h2>
+      <p>Sign up, top up, point your agent at it.</p></div>
     <div class="code"><span class="c"># Hermes</span>
 <span class="g">$</span> hermes config set model.provider custom
 <span class="g">$</span> hermes config set model.base_url https://addguac.fly.dev/v1
 <span class="g">$</span> hermes config set model.api_key guac_&lt;your-key&gt;
 
 <span class="c"># or any OpenAI-compatible client</span>
-<span class="g">$</span> curl https://addguac.fly.dev/v1/chat/completions \
-  -H "Authorization: Bearer guac_&lt;your-key&gt;" \
-  -d '{{"model":"guac","messages":[{{"role":"user","content":"hello"}}]}}'</div>
-  </div>
-</section>
-
-<section>
-  <div class="container">
-    <div class="sec-head"><h2>For advertisers</h2>
-      <p>Put your offer in front of people actually using AI agents — with honest, metered results.</p></div>
-    <div class="grid">
-      <div class="card"><div class="ic">🎯</div><h3>Reach active AI users</h3>
-        <p>Your offer appears as a disclosed sponsor below real agent answers — genuine attention, not a banner.</p></div>
-      <div class="card"><div class="ic">📊</div><h3>Pay for what delivers</h3>
-        <p>Per-impression billing. You set a budget; your offer runs only while it's funded and auto-pauses when spent.</p></div>
-      <div class="card"><div class="ic">✅</div><h3>Real clicks, real proof</h3>
-        <p>Impressions and clicks are metered honestly. See exactly what your budget bought.</p></div>
-    </div>
-    <div class="cta" style="margin-top:32px"><a class="btn btn-primary" href="/pitch">Read the advertiser pitch</a></div>
+<span class="g">$</span> curl https://addguac.fly.dev/v1/chat/completions \\
+  -H "Authorization: Bearer guac_&lt;your-key&gt;" \\
+  -d '{{"model":"anthropic/claude-sonnet-4","messages":[{{"role":"user","content":"hello"}}]}}'</div>
   </div>
 </section>
 
 <section class="alt">
   <div class="container">
+    <div class="sec-head"><h2>For advertisers</h2>
+      <p>Put your offer in front of people actually using AI agents — with honest, metered results.</p></div>
+    <div class="grid">
+      <div class="card"><div class="ic">{_icon('target')}</div><h3>Reach active AI users</h3>
+        <p>Your offer appears as a disclosed sponsor below real agent answers — genuine attention, not a banner.</p></div>
+      <div class="card"><div class="ic">{_icon('chart')}</div><h3>Pay for what delivers</h3>
+        <p>${'{:.2f}'.format(config.IMPRESSION_COST)} per delivered impression. Set a budget; your offer runs while it's funded and pauses when spent.</p></div>
+      <div class="card"><div class="ic">{_icon('check')}</div><h3>Real clicks, real proof</h3>
+        <p>Impressions and clicks are metered from the ledger. You see exactly what your budget bought.</p></div>
+    </div>
+    <div class="cta" style="margin-top:32px"><a class="btn btn-primary" href="/pitch">Read the advertiser pitch</a></div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
     <div class="sec-head"><h2>FAQ</h2></div>
     <div class="faq">
-      <details><summary>Does guac put ads inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked with a "Sponsor" label.</p></details>
+      <details><summary>Does guac put ads inside my AI answers?</summary><p>No. The model's output is never altered. Sponsors appear only as a clearly-separated footer below the answer, marked "Sponsor".</p></details>
+      <details><summary>How does the discount actually work?</summary><p>When an answer carries a sponsor, that advertiser's impression fee is credited onto your balance (minus guac's cut). At billing time your sponsor credit is spent before your own money — so advertiser money literally covers tokens you'd otherwise pay for.</p></details>
+      <details><summary>What do I pay when there's no sponsor on my answer?</summary><p>The wholesale cost of your tokens — the provider's real price, metered per request. guac adds no markup.</p></details>
+      <details><summary>Which models can I use?</summary><p>Any model the connected providers serve, by slug — frontier models via pass-through, plus quality-gated open-model pools. Ask for a specific model and it's forwarded unchanged.</p></details>
       <details><summary>Which agents work with guac?</summary><p>Any OpenAI-compatible client — Hermes, Codex, OpenClaw, Aider, or a plain script. If it accepts a base_url and API key, it works.</p></details>
-      <details><summary>Is the discount a credit or wallet?</summary><p>No. It's simply a lower price per token. Nothing to manage, nothing to withdraw.</p></details>
-      <details><summary>Will I see ads all the time?</summary><p>No — only a few a day, and only when an advertiser is actually funding them. If no one is paying, no ads appear at all.</p></details>
-      <details><summary>How is guac different from a normal inference API?</summary><p>You get the same OpenAI-compatible interface, but advertiser funding lowers your cost. It's the honest way to make AI cheaper.</p></details>
+      <details><summary>Will I see ads all the time?</summary><p>No — a few a day at most, and only when an advertiser has funded inventory. No funded sponsor, no footer.</p></details>
     </div>
   </div>
 </section>
 """
-    return _page("Pay less for AI", body,
-                 nav_links=(("How it works", "#how"), ("For advertisers", "/pitch"), ("GitHub", "https://github.com/buckZz7/guac")))
+    return _page("Pay wholesale for AI", body,
+                 nav_links=(("How it works", "#how"), ("Pricing", "#pricing"),
+                            ("For advertisers", "/pitch")))
 
 
 def portal_home():
@@ -393,17 +442,30 @@ def advertiser_login_form(email=None, magic_link=None, error=None, emailed=False
     return _page("Advertiser portal", body)
 
 
-def user_dashboard(user, savings):
+def user_dashboard(user, balance_own, subsidy, lifetime_saved):
     body = f"""
 <div class="dash">
-  <h1>Your API key</h1>
+  <h1>Your agent setup</h1>
   <p class="sub">{_html.escape(user['email'])} · <a href="/portal/logout">log out</a></p>
   <div class="stat-row">
-    <div class="stat"><div class="num">${savings:.4f}</div><div class="lbl">estimated savings</div></div>
+    <div class="stat"><div class="num">${balance_own:.2f}</div><div class="lbl">your balance</div></div>
+    <div class="stat"><div class="num">${subsidy:.2f}</div><div class="lbl">sponsor credit (spent first)</div></div>
+    <div class="stat"><div class="num">${lifetime_saved:.2f}</div><div class="lbl">saved via sponsors</div></div>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <h3>Top up your balance</h3>
+    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">You pay wholesale cost per
+      request. Sponsor credit is drawn first — advertiser money is literally what discounts
+      your tokens.</p>
+    <form method="post" action="/user/topup">
+      <input type="hidden" name="api_key" value="{_html.escape(user['api_key'])}">
+      <input type="number" name="amount_cents" value="1000" min="100" step="100" style="max-width:160px">
+      <button class="btn btn-primary" type="submit">Top up</button>
+    </form>
   </div>
   <div class="card">
     <h3>Connect your agent</h3>
-    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">Point any OpenAI-compatible agent at this base URL with this key.</p>
+    <p style="color:{_MUTED};font-size:.9rem;margin:6px 0 12px">Point any OpenAI-compatible agent at this base URL with this key. Ask for a specific model slug and it's forwarded to the provider unchanged.</p>
     <div class="code-line">{_html.escape(portal.user_base_url())}</div>
     <div class="code-line">{_html.escape(user['api_key'])}</div>
     <p style="color:{_MUTED};font-size:.9rem;margin-top:14px">Example (Hermes):</p>
@@ -425,7 +487,7 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None, balance=0
         f"<td>${o['spent']:.2f}</td>"
         f"<td>${o['budget']:.2f}</td>"
         f"<td>{'<span class=badge active>active</span>' if o['active'] else '<span class=badge paused>paused</span>'}</td>"
-        f"<td>{_toggle(o['id'], o['paused'], advertiser['email'])}</td></tr>"
+        f"<td>{_toggle(o['id'], o['paused'], advertiser['token'])}</td></tr>"
         for o in offers)
     body = f"""
 <div class="dash">
@@ -447,7 +509,7 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None, balance=0
   <div class="card" style="margin-bottom:20px">
     <h3>Create an offer</h3>
     <form method="post" action="/portal/advertiser/offer">
-      <input type="hidden" name="email" value="{_html.escape(advertiser['email'])}">
+      <input type="hidden" name="token" value="{_html.escape(advertiser['token'])}">
       <input type="text" name="headline" placeholder="Headline, e.g. 50% off first 3 months" required>
       <textarea name="body" placeholder="Body / details" rows="2"></textarea>
       <input type="text" name="claim" placeholder="Claim / code, e.g. AGENT50">
@@ -481,11 +543,11 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None, balance=0
     return _page("Ad manager", body)
 
 
-def _toggle(offer_id, paused, email):
+def _toggle(offer_id, paused, token):
     label = "Resume" if paused else "Pause"
     return (f'<form method="post" action="/portal/advertiser/offer/{offer_id}/toggle" '
             f'style="display:inline">'
-            f'<input type="hidden" name="email" value="{_html.escape(email)}">'
+            f'<input type="hidden" name="token" value="{_html.escape(token)}">'
             f'{button(label)}</form>')
 
 

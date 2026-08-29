@@ -1,4 +1,6 @@
-{"ts": "2026-08-29T18:46:23.408155+00:00", "advertiser": "acme@example.com", "delta": 10.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $10.00"}
-{"ts": "2026-08-29T18:46:23.486864+00:00", "advertiser": "acme@example.com", "delta": -0.01, "kind": "debit", "source": "impression", "note": "offer sponsor-be627b2e"}
-{"ts": "2026-08-29T18:46:23.525616+00:00", "advertiser": "acme@example.com", "delta": -0.01, "kind": "debit", "source": "impression", "note": "offer sponsor-be627b2e"}
-{"ts": "2026-08-29T18:46:23.534821+00:00", "advertiser": "acme@example.com", "delta": -0.01, "kind": "debit", "source": "impression", "note": "offer sponsor-be627b2e"}
+{"ts": "2026-08-29T20:26:42.646759+00:00", "advertiser": "alice@example.com", "delta": 5.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $5.00", "entity_kind": "user"}
+{"ts": "2026-08-29T20:26:42.712959+00:00", "advertiser": "alice@example.com", "delta": -1.5e-06, "kind": "debit", "source": "inference", "note": "stub via primary"}
+{"ts": "2026-08-29T20:26:43.887156+00:00", "advertiser": "acme@example.com", "delta": 10.0, "kind": "credit", "source": "topup_mock", "note": "mock top-up $10.00", "entity_kind": "advertiser"}
+{"ts": "2026-08-29T20:26:43.970166+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-efa193cb"}
+{"ts": "2026-08-29T20:26:44.008114+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-efa193cb"}
+{"ts": "2026-08-29T20:26:44.016930+00:00", "advertiser": "acme@example.com", "delta": -0.05, "kind": "debit", "source": "impression", "note": "offer sponsor-efa193cb"}

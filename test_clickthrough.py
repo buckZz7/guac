@@ -48,6 +48,8 @@ def main():
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_GATEWAY_KEY"] = KEY
     env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")  # -> ads.json fallback
+    # This test exercises the static demo inventory; production keeps it gated.
+    env["ADGATE_ALLOW_DEMO_ADS"] = "1"
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8000"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

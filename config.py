@@ -35,13 +35,26 @@ ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "3"))
 LATENCY_GRACE_MS = float(os.environ.get("ADGATE_LATENCY_GRACE_MS", "4000"))
 LATENCY_HARD_MS = float(os.environ.get("ADGATE_LATENCY_HARD_MS", "15000"))
 
-# Advertiser-funded discount the user gets off their token cost. 0.20 = 20% off.
-DISCOUNT_RATE = float(os.environ.get("ADGATE_DISCOUNT_RATE", "0.20"))
+# Advertiser-funded discount: sponsor money is passed through to the USER as
+# balance credits. guac keeps a fixed fraction of each impression as its fee;
+# the rest is credited to the user whose answer carried the sponsor.
+# 0.20 = guac keeps 20% of ad revenue, 80% goes to the user.
+GUAC_AD_FEE_FRACTION = float(os.environ.get("ADGATE_GUAC_AD_FEE_FRACTION", "0.20"))
 
 # Per-impression advertiser billing: each delivered "brought to you by" costs
 # one impression; the advertiser's budget is the max impressions they fund.
 # An offer auto-pauses when its budget is spent.
-IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.01"))
+IMPRESSION_COST = float(os.environ.get("ADGATE_IMPRESSION_COST", "0.05"))
+
+# Flat blended wholesale $/M used when a passthrough model's real cost is not
+# reported by the supplier (OpenRouter responses carry usage.cost when they
+# have it; this is the honest fallback).
+PASSTHROUGH_WHOLESALE_PER_M = float(
+    os.environ.get("ADGATE_PASSTHROUGH_PER_M", "0.50"))
+
+# Serve the static ads.json demo inventory only when explicitly enabled.
+# OFF by default: production must never show unfunded, unaffiliated offers.
+ALLOW_DEMO_ADS = os.environ.get("ADGATE_ALLOW_DEMO_ADS", "0") == "1"
 
 # Real per-model wholesale ($/M tokens) that guac pays its suppliers, keyed by
 # supplier name (from suppliers.json). Used by settlement so the transparent
@@ -72,7 +85,7 @@ GOOGLE_CLIENT_ID = os.environ.get("ADGATE_GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("ADGATE_GOOGLE_CLIENT_SECRET", "")
 # Public base for building OAuth redirect URLs (must match provider settings).
 OAUTH_BASE = os.environ.get("ADGATE_OAUTH_BASE", "")
-SESSION_TTL_S = int(os.environ.get("ADGATE_SESSION_TTL_S", "3600"))
+SESSION_TTL_S = int(os.environ.get("ADGATE_SESSION_TTL_S", str(30 * 24 * 3600)))
 
 # Email delivery for magic links (required when DEV_MODE is off). SMTP config.
 # If SMTP_HOST is unset, login links are NOT delivered and the portal is
@@ -118,7 +131,8 @@ STRIPE_SECRET_KEY = os.environ.get("ADGATE_STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("ADGATE_STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("ADGATE_STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_CENTS = int(os.environ.get("ADGATE_STRIPE_PRICE_CENTS", "1000"))  # default top-up unit ($10)
-# Advertiser money ledger (top-ups + impression charges). Plain JSON lines.
+# Advertiser money + user billing ledger (top-ups, impression charges,
+# inference bills, sponsor credits). Plain JSON lines.
 PAYMENTS_LEDGER = Path(os.environ.get("ADGATE_PAYMENTS_LEDGER",
                                       str(BASE / "payments.jsonl")))
 
