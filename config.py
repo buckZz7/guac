@@ -83,8 +83,12 @@ USER_ID_HEADER = "x-user-id"
 def load_ads():
     if not ADS_FILE.exists():
         return []
-    with open(ADS_FILE) as f:
-        return json.load(f)
+    try:
+        with open(ADS_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    return data if isinstance(data, list) else []
 
 
 def load_state():

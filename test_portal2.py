@@ -101,15 +101,17 @@ def main():
         adv_token = re.search(r"adv_[a-f0-9]+", dash.text).group(0)
         r = httpx.post(GW + "/advertiser/offer",
                        headers={"authorization": f"Bearer {adv_token}"},
-                       json={"headline": "10% off", "budget": 0.03})  # 3 impressions at 0.01
+                       json={"headline": "10% off", "budget": 0.03,
+                             "intents": ["hosting"]})  # 3 impressions at 0.01
         assert r.status_code == 200, r.text
         oid = r.json()["offer_id"]
         print("create offer:", oid, "✓")
 
-        # 5) server a sponsored completion -> charges 1 impression
+        # 5) serve a sponsored completion -> charges 1 impression (decision-point gate)
         c = httpx.Client(base_url=GW, headers={"authorization": f"Bearer {KEY}",
                                                "x-user-id": "carol"})
-        p = {"model": "guac", "messages": [{"role": "user", "content": "hi"}]}
+        p = {"model": "guac", "_stub_content": "Which hosting plan should I recommend?",
+             "messages": [{"role": "user", "content": "help me choose a host"}]}
         r = c.post("/v1/chat/completions", json=p)
         assert r.status_code == 200, r.text
         assert r.json().get("guac", {}).get("sponsored")

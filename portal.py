@@ -69,8 +69,9 @@ def _save_users(users):
     _write_json(config.USERS_FILE, users)
 
 
-def create_user(email, ads_per_day=1):
-    """Create a user, return their record (with a fresh API key)."""
+def create_user(email):
+    """Create a user, return their record (with a fresh API key). No frequency
+    knob — ads are placed only at decision points."""
     def _apply(users):
         if email in users:
             return None, "email already registered"
@@ -78,7 +79,6 @@ def create_user(email, ads_per_day=1):
         users[email] = {
             "email": email,
             "api_key": api_key,
-            "ads_per_day": ads_per_day,
             "created": _now().isoformat(),
             "active": True,
         }

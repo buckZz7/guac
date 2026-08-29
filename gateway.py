@@ -467,15 +467,14 @@ async def signup(request: Request):
     email = (body.get("email") or "").strip().lower()
     if not email or "@" not in email:
         return JSONResponse({"error": {"message": "valid email required"}}, status_code=400)
-    ads_per_day = int(body.get("ads_per_day", 1))
-    user, err = portal.create_user(email, ads_per_day)
+    user, err = portal.create_user(email)
     if err:
         return JSONResponse({"error": {"message": err}}, status_code=409)
     return {
         "api_key": user["api_key"],
         "base_url": portal.user_base_url(),
-        "ads_per_day": user["ads_per_day"],
-        "note": "point your agent at base_url with this api_key",
+        "note": "point your agent at base_url with this api_key. A disclosed sponsor "
+                "appears below the answer only at a real decision point.",
     }
 
 
@@ -736,7 +735,7 @@ async def portal_user_login(request: Request):
         return portal_html.user_login_form(email, error="Valid email required")
     # Ensure the user exists so they can always sign back in.
     if not portal.get_user_by_email(email):
-        portal.create_user(email, 1)
+        portal.create_user(email)
     link = _magic_link_for("user", email)
     return portal_html.user_login_form(email, magic_link=link)
 
@@ -757,19 +756,6 @@ async def portal_user_auth(request: Request):
         if r.get("user") == email and r.get("sponsored"):
             savings += config.DISCOUNT_RATE  # est. discount value per sponsored req
     return portal_html.user_dashboard(user, savings)
-
-
-@app.post("/portal/user/settings", response_class=HTMLResponse)
-async def portal_user_settings(request: Request):
-    form = await request.form()
-    email = (form.get("email") or "").strip().lower()
-    ads = int(form.get("ads_per_day") or 1)
-    user = portal.get_user_by_email(email)
-    if not user:
-        return portal_html.user_login_form(error="No such user")
-    portal.update_user(email, ads_per_day=min(10, max(1, ads)))
-    user = portal.get_user_by_email(email)
-    return portal_html.user_dashboard(user, 0.0)
 
 
 @app.post("/portal/advertiser/login", response_class=HTMLResponse)
