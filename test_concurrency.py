@@ -10,18 +10,22 @@ import sys
 # Set env BEFORE importing config/portal so their file paths point at temp files.
 td = tempfile.mkdtemp()
 os.environ["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
+os.environ["ADGATE_PAYMENTS_LEDGER"] = os.path.join(td, "payments.jsonl")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
 import config
 import portal
+import payments
 
 
 def main():
     # create an offer with a large budget
     offer = portal.create_offer("ad@ex.com", "t", "", "", 100.0)
     oid = offer["id"]
+    # Fund the advertiser (mock credit) so charges can draw on balance.
+    payments.credit_balance("ad@ex.com", 1_000_000, source="test_seed")
 
     N = 200
     errors = []

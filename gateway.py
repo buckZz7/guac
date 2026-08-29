@@ -25,6 +25,7 @@ import httpx
 import config
 import limits
 import mailer
+import payments
 from suppliers import load_pool
 import portal
 import portal_html
@@ -82,18 +83,23 @@ def _should_show_ad(user_id):
     """Append an ad iff: funded demand exists AND user under daily cap. Returns
     (show, offer_or_None). Deterministic rotation across offers.
 
-    'Demand' = an active offer is present. Portal offers carry a budget/spent
-    ledger; static ads.json offers (no budget field) are treated as funded
-    standing inventory so they still count as demand."""
+    'Demand' = an active offer whose advertiser has prepaid balance (or a static
+    ads.json offer, treated as standing funded inventory). No funded advertiser
+    -> no ads -> the system is honest about money."""
     offers = _active_offers()
     if not offers:
         return False, None
-    # Demand gate: at least one offer must have unfunded budget. Static offers
-    # (no budget field) are assumed funded (standing inventory).
+    # Demand gate: at least one offer must be fundable. Static offers (no
+    # advertiser field) are assumed funded; portal offers require a balance.
+    from payments import balance_for
+
     def funded(o):
-        if "budget" not in o:
-            return True
-        return o.get("spent", 0) < o.get("budget", 0)
+        adv = o.get("advertiser")
+        if not adv:
+            return True  # static standing inventory
+        if o.get("spent", 0) >= o.get("budget", 0):
+            return False
+        return balance_for(adv) >= config.IMPRESSION_COST
     if not any(funded(o) for o in offers):
         return False, None
     state, day = _daily_state(user_id)
@@ -568,7 +574,70 @@ async def advertiser_stats(request: Request):
     advertiser_email = _auth_advertiser(request)
     if not advertiser_email:
         return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
-    return {"offers": portal.offer_stats_for(advertiser_email)}
+    stats = portal.offer_stats_for(advertiser_email)
+    balance = payments.balance_for(advertiser_email)
+    return {"balance": balance, "backend": payments.backend(), "offers": stats}
+
+
+@app.post("/advertiser/topup")
+async def advertiser_topup(request: Request):
+    """Start an advertiser balance top-up. Mock backend credits immediately and
+    returns {credited: true}. Stripe backend returns a Checkout URL.
+    Accepts JSON ({amount_cents}, Bearer token) or a portal form post (hidden
+    'token' field)."""
+    # Auth: advertiser token via Bearer header OR a form 'token' field.
+    advertiser_email = _auth_advertiser(request)
+    ctype = request.headers.get("content-type", "")
+    if "application/json" in ctype:
+        body = await request.json()
+        amount_raw = body.get("amount_cents", 0)
+    else:
+        form = await request.form()
+        if not advertiser_email:
+            adv = portal.get_advertiser_by_token((form.get("token") or "").strip())
+            advertiser_email = adv.get("email") if adv else None
+        amount_raw = form.get("amount_cents", 0)
+    if not advertiser_email or advertiser_email == "master":
+        return JSONResponse({"error": {"message": "unauthorized"}}, status_code=401)
+    try:
+        amount_cents = int(amount_raw)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": {"message": "amount_cents must be an integer"}},
+                            status_code=400)
+    try:
+        result = payments.create_topup(advertiser_email, amount_cents)
+    except ValueError as e:
+        return JSONResponse({"error": {"message": str(e)}}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": {"message": f"payment error: {e}"}},
+                            status_code=502)
+    result["balance"] = payments.balance_for(advertiser_email)
+    if "application/json" not in ctype:
+        return HTMLResponse(f"<h2>Balance updated to ${result['balance']:.2f}</h2>"
+                            f"<p><a href='/portal'>Back to portal</a></p>")
+    return result
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe webhook endpoint: credits advertiser balance on payment success.
+    Only active when the stripe backend is configured."""
+    if payments.backend() != "stripe":
+        return JSONResponse({"ok": True, "ignored": True})
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    result = payments.handle_webhook(payload, sig)
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error", "invalid")}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/advertiser/topup/success")
+def topup_success(request: Request):
+    """Stripe redirect target after a successful checkout. (Mock backend credits
+    inline and never redirects here.)"""
+    return HTMLResponse("<h2>Payment received — your balance is updated.</h2>"
+                        "<p><a href='/portal'>Back to portal</a></p>")
 
 
 def _auth_advertiser(request):
@@ -859,7 +928,9 @@ async def portal_advertiser_auth(request: Request):
     adv = portal.get_advertiser(email)
     if not adv:
         return portal_html.advertiser_login_form(error="No such advertiser")
-    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email))
+    balance = payments.balance_for(email)
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                            balance=balance)
 
 
 @app.post("/portal/advertiser/offer", response_class=HTMLResponse)
@@ -876,20 +947,24 @@ async def portal_advertiser_offer(request: Request):
                                       form.get("link"))
     if err:
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
-                                                error=err)
+                                                error=err,
+                                                balance=payments.balance_for(email))
     budget_raw = form.get("budget")
     try:
         budget = float(budget_raw)
     except (TypeError, ValueError):
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
-                                                error="Budget must be a number")
+                                                error="Budget must be a number",
+                                                balance=payments.balance_for(email))
     if not cleaned["headline"] or budget <= 0:
         return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
-                                                error="Headline and positive budget required")
+                                                error="Headline and positive budget required",
+                                                balance=payments.balance_for(email))
     offer = portal.create_offer(email, cleaned["headline"], cleaned["body"], cleaned["claim"],
                                 budget, offer_type, intents, cleaned["image_url"], cleaned["link"])
     return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
-                                            created=offer["headline"])
+                                            created=offer["headline"],
+                                            balance=payments.balance_for(email))
 
 
 @app.post("/portal/advertiser/offer/{offer_id}/toggle", response_class=HTMLResponse)
@@ -901,7 +976,8 @@ async def portal_advertiser_toggle(request: Request, offer_id: str):
     if not adv or not offer or offer.get("advertiser") != email:
         return portal_html.advertiser_login_form(error="Not authorized")
     portal.set_offer_paused(offer_id, not offer.get("paused", False))
-    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email))
+    return portal_html.advertiser_dashboard(adv, portal.offer_stats_for(email),
+                                            balance=payments.balance_for(email))
 
 
 def main():

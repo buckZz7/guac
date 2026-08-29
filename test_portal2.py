@@ -99,6 +99,11 @@ def main():
 
         # 4) create an offer with a small budget (per-impression)
         adv_token = re.search(r"adv_[a-f0-9]+", dash.text).group(0)
+        # Fund the advertiser balance (mock backend) so offers can serve.
+        tp = httpx.post(GW + "/advertiser/topup",
+                        headers={"authorization": f"Bearer {adv_token}"},
+                        json={"amount_cents": 1000})
+        assert tp.status_code == 200 and tp.json().get("credited"), tp.text
         r = httpx.post(GW + "/advertiser/offer",
                        headers={"authorization": f"Bearer {adv_token}"},
                        json={"headline": "10% off", "budget": 0.03,

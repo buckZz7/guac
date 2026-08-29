@@ -50,6 +50,7 @@ def build_bundle():
         "supplier_state": _read_json(config.SUPPLIER_STATE_FILE),
         "ledger": _read_lines(config.LEDGER_FILE),
         "attribution": _read_lines(config.ATTRIBUTION_FILE),
+        "payments": _read_lines(config.PAYMENTS_LEDGER),
     }
     # Checksum over the serialized bundle so a restore/operator can verify the
     # export wasn't truncated or tampered in transit.
@@ -78,7 +79,8 @@ def restore_bundle(bundle):
             results.append((path.name, True))
     # JSONL files
     for path, key in [(config.LEDGER_FILE, "ledger"),
-                      (config.ATTRIBUTION_FILE, "attribution")]:
+                      (config.ATTRIBUTION_FILE, "attribution"),
+                      (config.PAYMENTS_LEDGER, "payments")]:
         rows = bundle.get(key)
         if rows is not None:
             path.parent.mkdir(parents=True, exist_ok=True)

@@ -17,6 +17,7 @@ os.environ["ADGATE_MAGIC_USED_FILE"] = os.path.join(td, "magic_used.json")
 os.environ["ADGATE_SUPPLIER_STATE_FILE"] = os.path.join(td, "supplier_state.json")
 os.environ["ADGATE_LEDGER_FILE"] = os.path.join(td, "ledger.jsonl")
 os.environ["ADGATE_ATTRIBUTION_FILE"] = os.path.join(td, "attribution.jsonl")
+os.environ["ADGATE_PAYMENTS_LEDGER"] = os.path.join(td, "payments.jsonl")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -24,6 +25,7 @@ sys.path.insert(0, ROOT)
 import config
 import backup
 import portal
+import payments
 
 
 def main():
@@ -31,6 +33,7 @@ def main():
     portal.create_user("a@b.com")
     portal.create_advertiser("adv@b.com")
     offer = portal.create_offer("adv@b.com", "head", "body", "claim", 5.0)
+    payments.credit_balance("adv@b.com", 1000, source="test_seed")
     portal.charge_impression(offer["id"])
     # seed a ledger row directly
     config.log_ledger({"user": "a@b.com", "sponsored": True, "tokens": 10})
@@ -55,7 +58,7 @@ def main():
     restored_names = {name for name, _ in results}
     # the files that had data must restore; None-valued ones are skipped
     for expect in ("users.json", "advertisers.json", "offers.json",
-                   "ledger.jsonl", "attribution.jsonl"):
+                   "ledger.jsonl", "attribution.jsonl", "payments.jsonl"):
         assert expect in restored_names, (expect, results)
     print("restore round-trips populated state:", "✓")
     # re-read restored state

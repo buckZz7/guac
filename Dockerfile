@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the guac codebase (runtime files only — no tests/stub/dev tools).
-COPY config.py suppliers.py settlement.py backup.py gateway.py portal.py portal_html.py mailer.py limits.py ads.json suppliers.json ./
+COPY config.py suppliers.py settlement.py backup.py gateway.py portal.py portal_html.py mailer.py limits.py payments.py ads.json suppliers.json ./
 
 # Docs (advertiser pitch is served at /pitch).
 COPY docs/ ./docs/
@@ -23,6 +23,7 @@ ENV ADGATE_STATE_FILE=/data/state.json \
     ADGATE_OFFERS_FILE=/data/offers.json \
     ADGATE_ADVERTISERS_FILE=/data/advertisers.json \
     ADGATE_MAGIC_USED_FILE=/data/magic_used.json \
+    ADGATE_PAYMENTS_LEDGER=/data/payments.jsonl \
     ADGATE_ADS_FILE=/app/ads.json \
     ADGATE_SUPPLIERS_FILE=/app/suppliers.json \
     CHUTES_API_KEY= \

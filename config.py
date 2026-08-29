@@ -100,6 +100,17 @@ SIGNUP_PER_IP_PER_HOUR = int(os.environ.get("ADGATE_SIGNUP_PER_IP_PER_HOUR", "10
 # against a leaked/abused key burning unbounded upstream spend.
 DAILY_TOKEN_CAP = int(os.environ.get("ADGATE_DAILY_TOKEN_CAP", "0"))
 
+# Payments. Backend is "mock" (dev, no real money, no deps) or "stripe" (real
+# money; requires STRIPE_* keys + a public webhook endpoint).
+PAYMENTS_BACKEND = os.environ.get("ADGATE_PAYMENTS_BACKEND", "mock")
+STRIPE_SECRET_KEY = os.environ.get("ADGATE_STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("ADGATE_STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("ADGATE_STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_CENTS = int(os.environ.get("ADGATE_STRIPE_PRICE_CENTS", "1000"))  # default top-up unit ($10)
+# Advertiser money ledger (top-ups + impression charges). Plain JSON lines.
+PAYMENTS_LEDGER = Path(os.environ.get("ADGATE_PAYMENTS_LEDGER",
+                                      str(BASE / "payments.jsonl")))
+
 
 def load_ads():
     if not ADS_FILE.exists():

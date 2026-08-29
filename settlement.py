@@ -43,6 +43,20 @@ def _load_ledger_rows():
     return rows
 
 
+def _read_payments():
+    rows = []
+    if config.PAYMENTS_LEDGER.exists():
+        with open(config.PAYMENTS_LEDGER) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        rows.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    return rows
+
+
 def _tokens(r):
     return r.get("prompt_tokens", 0) + r.get("completion_tokens", 0)
 
@@ -90,14 +104,22 @@ def settle(rows, ad_money_per_offer=None, fee_per_offer=0.10,
     else:
         wholesale_cost = total_tk * wholesale_per_m / 1_000_000
 
-    # Real ad revenue: sum each sponsored row's cost. Prefer the recorded
-    # per-impression cost; if a row is missing it (legacy/edge), fall back to
-    # the per-offer estimate so a sponsored impression is never worth $0.
-    per_offer = ad_money_per_offer if ad_money_per_offer is not None else 0.30
-    ad_revenue = 0.0
-    for r in sponsored:
-        c = r.get("impression_cost")
-        ad_revenue += c if (c is not None and c > 0) else per_offer
+    # Real ad revenue: the actual money advertisers prepaid and spent on
+    # impressions, from the PAYMENTS ledger (real balance debits). Fall back to
+    # the per-impression cost recorded on sponsored rows (legacy), else the
+    # per-offer estimate so a sponsored impression is never worth $0.
+    payment_debits = sum(
+        -row.get("delta", 0.0)
+        for row in _read_payments()
+        if row.get("kind") == "debit")
+    if payment_debits > 0:
+        ad_revenue = payment_debits
+    else:
+        per_offer = ad_money_per_offer if ad_money_per_offer is not None else 0.30
+        ad_revenue = 0.0
+        for r in sponsored:
+            c = r.get("impression_cost")
+            ad_revenue += c if (c is not None and c > 0) else per_offer
 
     guac_fee = n_ads * fee_per_offer
     # Ad money passed through to the user. guac's fee comes out of the sponsor

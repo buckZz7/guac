@@ -276,17 +276,34 @@ def set_offer_paused(offer_id, paused):
 
 
 def charge_impression(offer_id):
-    """Record one delivered impression. Returns (offer, cost) if the offer
-    exists, else (None, 0.0). Auto-pauses when the budget is spent.
-    Thread-safe: the read-modify-write is atomic under the portal lock, so two
-    concurrent requests can't lose an impression count."""
+    """Record one delivered impression and debit the advertiser's prepaid
+    balance. Returns (offer, cost) if charged, else (None, 0.0).
+
+    The advertiser's BALANCE is the source of truth: an offer only serves while
+    its advertiser has prepaid funds. Auto-pauses the offer (and the advertiser's
+    offers) when balance is exhausted. Thread-safe via the portal lock; the
+    balance debit is recorded to the payments ledger.
+    """
+    from payments import balance_for, debit_balance
+
     def _apply(offers):
         for o in offers:
             if o.get("id") == offer_id:
+                adv = o.get("advertiser")
+                # Must have a funded advertiser balance.
+                if adv:
+                    bal = balance_for(adv)
+                    if bal < config.IMPRESSION_COST:
+                        o["active"] = False
+                        o["paused"] = True
+                        return o, 0.0
                 # Defensive: offers loaded from static ads.json (or other
                 # sources) may not carry portal bookkeeping fields.
                 o["impressions"] = o.get("impressions", 0) + 1
                 o["spent"] = o.get("spent", 0.0) + config.IMPRESSION_COST
+                if adv:
+                    debit_balance(adv, int(config.IMPRESSION_COST * 100),
+                                  source="impression", note=f"offer {offer_id}")
                 if o["spent"] >= o.get("budget", 0):
                     o["active"] = False
                     o["paused"] = True

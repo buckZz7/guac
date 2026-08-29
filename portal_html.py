@@ -165,7 +165,7 @@ def advertiser_login_form(email=None, magic_link=None, error=None, emailed=False
     return _page("Advertiser portal · guac", body)
 
 
-def advertiser_dashboard(advertiser, offers, error=None, created=None):
+def advertiser_dashboard(advertiser, offers, error=None, created=None, balance=0.0):
     err = f'<div class="error">{_html.escape(error)}</div>' if error else ""
     created_flash = f'<div class="flash">Offer created: <strong>{_html.escape(created)}</strong></div>' if created else ""
     rows = "".join(
@@ -185,6 +185,17 @@ def advertiser_dashboard(advertiser, offers, error=None, created=None):
       <h2>Your API token</h2>
       <p class="meta">Use this to create/manage offers programmatically.</p>
       <div class="code">{_html.escape(advertiser['token'])}</div>
+    </div>
+    <div class="card">
+      <h2>Balance</h2>
+      <div class="stats"><div class="stat"><div class="num">${balance:.2f}</div>
+        <div class="lbl">prepaid balance</div></div></div>
+      <p class="meta">Your balance funds impressions. Top up to keep your offers running.</p>
+      <form method="post" action="/advertiser/topup" class="inline-form" id="topup-form">
+        <input type="hidden" name="token" value="{_html.escape(advertiser['token'])}">
+        <input type="number" name="amount_cents" value="1000" min="100" step="100">
+        <button type="submit">Top up</button>
+      </form>
     </div>
     {created_flash}{err}
     <div class="card">
