@@ -87,7 +87,9 @@ def main():
         })
         assert r.status_code == 200, r.text
         content = r.json()["choices"][0]["message"]["content"]
-        assert "/go/sponsor-nordvpn" in content, f"footer link not routed through /go: {content!r}"
+        # The offer rotates deterministically; just assert the footer link routes
+        # through /go/<id> for whichever offer was picked.
+        assert "/go/sponsor-" in content, f"footer link not routed through /go: {content!r}"
         print("PASS  footer link routes through /go/<id> (click trackable)")
 
         print("\nCLICKTHROUGH FUNNEL TESTS PASSED")

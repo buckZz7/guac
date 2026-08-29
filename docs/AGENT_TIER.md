@@ -10,8 +10,8 @@ layer: offers delivered to agents that are actually deciding and buying — the
 ## The thesis, restated
 
 v1 proves the economics with humans: an advertiser pays per impression, the
-user sees a disclosed `Sponsor:` footer below the answer at a decision point
-(final answer + handoff + topic match), the model is never touched. The
+user sees a disclosed `Sponsor:` footer below final answers (up to a daily cap,
+demand-gated), the model is never touched. The
 **agent-native tier** changes *who* the offer reaches. Instead of a human
 seeing a sponsorship on a response, the **agent itself** receives offers in
 context and can act on them — book the flight, pick the vendor, redeem the

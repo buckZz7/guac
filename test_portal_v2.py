@@ -16,7 +16,7 @@ c = TestClient(gateway.app)
 # 1) /pitch renders the advertiser doc (or graceful fallback if file absent)
 r = c.get("/pitch")
 assert r.status_code == 200, r.status_code
-assert ("moment of need" in r.text) or ("decision-point sponsorship" in r.text)
+assert ("moment of need" in r.text) or ("demand-gated sponsorship" in r.text)
 print("PASS  /pitch renders the advertiser pitch (or fallback)")
 
 # 2) landing page has the pitch link + new copy

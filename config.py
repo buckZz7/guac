@@ -23,9 +23,12 @@ SUPPLIERS_FILE = Path(os.environ.get("ADGATE_SUPPLIERS_FILE", str(BASE / "suppli
 SUPPLIER_STATE_FILE = Path(os.environ.get("ADGATE_SUPPLIER_STATE_FILE",
                                           str(BASE / "supplier_state.json")))
 
-# Runtime state file (kept for backward compat; no longer used for ad cadence —
-# V1 shows ads only at decision points, with no per-day frequency knob).
+# Runtime state file (per-user daily ad count, demand-gated).
 STATE_FILE = Path(os.environ.get("ADGATE_STATE_FILE", str(BASE / "state.json")))
+
+# Max sponsored offers a user sees per day (flat cap). Demand-gated: ads only
+# show when a funded offer exists, up to this ceiling.
+ADS_PER_DAY = int(os.environ.get("ADGATE_ADS_PER_DAY", "3"))
 
 # Supplier quality scoring: latency below GRACE costs nothing (cheap inference
 # is naturally 1-3s even when reliable); above it score decays to zero at HARD.

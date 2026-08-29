@@ -2,34 +2,32 @@
 
 *Advertiser pays. User saves. Middleman stays small.*
 
-**Version 4 — v1 is decision-point sponsorship.**
+**Version 5 — v1 is demand-gated sponsorship.**
 
-The v1 sponsorship is a **`Sponsor:` footer** for the human, delivered inline
-at the moment it matters. The gateway never touches the model's context — it
-forwards the request unchanged and appends the disclosed footer **below** the
-answer, delimited by `---`, so everything above the line is byte-identical to
-the model output. This removes the injection risk and the "agent as hard buyer"
-machinery from the critical path. The agent-native version is a later layer on
-top of the same economics.
+The v1 sponsorship is a **`Sponsor:` footer** for the human, delivered after
+final agent answers. The gateway never touches the model's context — it forwards
+the request unchanged and appends the disclosed footer **below** the answer,
+delimited by `---`, so everything above the line is byte-identical to the model
+output. This removes the injection risk and the "agent as hard buyer" machinery
+from the critical path. The agent-native version is a later layer on top of the
+same economics.
 
-**There is no frequency knob.** No "1/5/10 ads a day" choice — an ad is shown
-only when it is **earned**, at a genuine decision point. The gate is
-deterministic (no LLM judge):
+**The cadence is deliberately simple and demand-driven.** No auctions, no
+topic-matching, no decision-point heuristics. An ad appears when **all three**
+hold, deterministically:
 
 1. **Final answer** — `finish_reason == "stop"`. Mid-loop `tool_calls` turns
    (the agent narrating tool work) never qualify — this is what removes the
    "bunch of intermediate messages" noise.
-2. **Handoff** — the final answer actually poses a decision to the user (ends
-   in `?` or a handoff phrase like "which / do you want me to / your options
-   are"). Plain statements ("here's the result") don't qualify.
-3. **Topic match** — at least one offer's `intent` tag appears in the decision
-   text. No match → no ad. Highest match count wins; tie-break by id.
+2. **Funded demand** — at least one active offer has budget remaining (static
+   offers count as standing funded inventory). If no advertiser is paying, no
+   ads appear at all — the system is honest about inventory.
+3. **Under the daily cap** — the user hasn't hit `ADS_PER_DAY` (default 3) today.
 
-The footer carries the sponsor name, headline, body, claim, and optionally an
-`image_url` (renders as native media) and `link` (tappable). This is the
-**decision slot** — the highest-attention, highest-intent moment in the system,
-the Amazon-sponsored-products analog: the offer is a *relevant option at the
-moment of need*, not noise.
+Offers rotate deterministically so a user sees different sponsors across the
+day. The footer carries the sponsor name, headline, body, claim, and optionally
+an `image_url` (renders as native media) and `link` (tappable, routed through
+the `/go/<id>` clickthrough).
 
 ## The model in one line
 guac resells inference. Advertisers pay to reach your agent; that money lowers
@@ -89,31 +87,31 @@ So sourcing can never be "cheapest miner wins":
 
 ## User side (no choice — ads are placed for you)
 
-The user makes **no frequency choice**. V1 places an ad only at a genuine
-decision point — the moment the agent hands off to you with a real choice. There
-is no "how many ads a day" knob; you never get ads on plain answers or mid-loop
-narration. The only user-facing trust is the disclosure: the ad sits below a
-`---` line, clearly separated from the model's answer, and it funds your discount.
+The user makes **no frequency choice**. V1 appends a sponsor after final answers,
+up to a hard daily cap, only when an advertiser has funded budget. There's no
+"how many ads a day" knob; you never get ads on mid-loop narration, and you get
+zero ads on days no advertiser is paying. The only user-facing trust is the
+disclosure: the ad sits below a `---` line, clearly separated from the model's
+answer, and it funds your discount.
 
 The ad is a **`Sponsor:` footer** attached to the response — the human sees it,
-the model never does. It rides on real attention (you're reading the decision),
-so it's trusted rather than noise.
+the model never does. It rides on real attention (you just read the answer), so
+it's trusted rather than noise.
 
 ## Advertiser side (one form)
 
-> *Headline · body · claim · budget · intents (topic keywords) · image_url · link*
+> *Headline · body · claim · budget · image_url · link*
 
-They buy **delivered impressions at relevant decision moments**. The `intents`
-tags decide *when* the offer can appear — the offer only surfaces when the
-conversation is actually about that topic, so the ad is a relevant option, not a
-banner. Later (agent-native): they buy **offers delivered to agents that are
-actually deciding/buying**, with the agent as a hard buyer.
+They buy **delivered impressions, capped per user per day**. Budget is the
+demand that gates the whole system: with funds, your offer runs; without, no ads
+appear. Deterministic rotation means different users see different sponsors, so
+a given offer reaches a spread of users up to its budget. Later (agent-native):
+they buy **offers delivered to agents that are actually deciding/buying**, with
+the agent as a hard buyer.
 
-Note the value proposition changed with decision-point placement: you can no
-longer guarantee an advertiser N impressions a day (if N decision points don't
-happen, they don't happen). The sell is **precision and relevance** (offers at
-the exact moment of need), not reach. That's a stronger, more defensible pitch —
-but it's a different one.
+Note the value proposition: each user sees at most a few sponsored footers a
+day, so impressions are **capped by design**. The sell is quality placement and
+accountability (metered impressions, real clicks, public split), not volume.
 
 ---
 

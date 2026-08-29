@@ -68,7 +68,7 @@ One free Fly.io account, signed in at https://fly.io.
 
 **Portal (recommended)** — self-serve web UI at `https://<app>.fly.dev/portal`:
 - Users: magic-link login, view/re-copy API key + base_url
-- Advertisers: magic-link login, ad manager (create offers with intents/image/link, pause/toggle, per-impression billing)
+- Advertisers: magic-link login, ad manager (create offers with image/link, pause/toggle, per-impression billing)
 
 **Users sign up** (API):
 ```
@@ -92,8 +92,9 @@ POST https://<app>.fly.dev/advertiser/offer
 Stats: `GET https://<app>.fly.dev/advertiser/stats`
 
 **Sponsorship delivery** — the gateway appends a disclosed `Sponsor:` footer
-below an answer automatically, at a decision point (final answer + handoff +
-topic match). No cron, no separate delivery — it rides on the response itself.
+below an answer automatically, after final answers up to a daily cap, only when
+a funded offer exists (demand-gated). No cron, no separate delivery — it rides
+on the response itself.
 
 ## Gotchas
 

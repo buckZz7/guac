@@ -1,30 +1,29 @@
-# guac — advertiser pitch (decision-point sponsorship)
+# guac — advertiser pitch (demand-gated sponsorship)
 
-**The one-line value:** guac puts your offer in front of a person *at the exact
-moment they are choosing* — not as a banner they scroll past, but as a relevant
-option at a real decision point. You pay per delivered offer; the money lowers
-that person's inference cost.
+**The one-line value:** guac places your offer after an agent's answers — up to
+a few times a day per user, only while you have budget. You pay per delivered
+offer; the money lowers that person's inference cost.
 
 ## What an advertiser gets
 
-- **Placement at the moment of need.** The offer appears only when the agent's
-  answer is a *final turn that hands the user a decision* — "which hosting plan
-  should I pick?" — **and** the conversation is about your topic. Not on plain
-  answers. Not on the agent's mid-task narration. Just the decision.
-- **Relevance, not reach.** Your offer carries `intents` (topic keywords). If the
-  decision isn't about your topic, your offer simply doesn't run. You're not
-  buying noise; you're buying the handful of moments where you're genuinely the
-  right answer.
+- **Simple, predictable placement.** Your offer appears as a disclosed
+  `Sponsor:` footer below final agent answers, up to the daily cap. No auctions,
+  no keyword bidding — you set a budget and your offer runs while it has funds.
+- **Demand-gated by you.** Your budget is the demand. If you have budget, your
+  offer is eligible; if you don't, no ad runs at all. The system only ever shows
+  ads that are actually funded.
+- **A few per day, never spam.** Each user sees at most a handful of sponsored
+  footers a day (a hard cap), so your message is attention you earn, not noise.
 - **Delivered impressions you can verify.** Every impression is metered from the
-  ledger — the exact offer, the moment, the topic. No fabricated reach numbers.
+  ledger — the exact offer, the moment. No fabricated reach numbers.
 - **Attribution that proves value.** A "click" here means the offer was actually
-  *acted on* (referenced, redeemed), reported back via guac's attribution
-  callback. You see views → clicks → redemptions, not vanity metrics.
+  *acted on* (referenced, redeemed), reported via guac's attribution callback /
+  clickthrough. You see views → clicks → redemptions, not vanity metrics.
 
 ## What the user sees
 
 ```
-"Which hosting plan should I recommend for you?"
+"Here are three options for managed hosting, each with tradeoffs."
 
 ---
 Sponsor: Acme Cloud Hosting — 50% off your first 3 months of managed hosting
@@ -42,15 +41,15 @@ Claim: 50% off first 3 months, code AGENT50
 
 ## Why this is a better slot than an ad
 
-- It's the **decision slot** (the Amazon-sponsored-products analog): highest
-  attention, highest intent, exactly when the user is choosing.
-- The trust is the product. A disclosed, relevant, decision-time offer is
-  *helpful* — it doesn't erode the very thing the whole system runs on.
+- It's a **sponsorship, not an interruption.** The offer follows a real agent
+  answer the user just read, is disclosed, and is capped — attention you earn,
+  not a banner that hijacks the page.
+- The trust is the product. A disclosed, capped, clearly-separated sponsor
+  doesn't erode the thing the whole system runs on.
 
 ## What we ask of you (one form)
 
-`headline` · `body` · `claim` · `budget` · `intents` (your topic keywords) ·
-`image_url` (optional creative) · `link`
+`headline` · `body` · `claim` · `budget` · `image_url` (optional creative) · `link`
 
 You set a budget; each delivered offer costs one impression; your offer
 auto-pauses when the budget is spent. You're always on the hook only for what
@@ -58,17 +57,17 @@ actually delivered.
 
 ## The honest framing
 
-We **can't** promise you N impressions a day — if N real, relevant decision
-points don't happen, they don't happen. What we sell is the *opposite* of reach:
-**precision.** A smaller number of impressions, each one at a real choice about
-your category, each one accountable through the ledger and the attribution
-funnel. For a category where the user is actively deciding, that's worth more
-per impression — and it's a story that survives a skeptic reading the numbers.
+Each user sees at most a few sponsored footers a day, so your impressions are
+**capped by design** — you buy quality placement, not volume. Every impression
+is metered from the ledger, every click is real (a clickthrough or attribution
+callback), and the split is public. Your budget literally gates the whole system:
+when you have funds, your offer runs; when you don't, no ads appear. That's a
+story that survives a skeptic reading the numbers.
 
 ---
 
 *That's the pitch. One sentence to lead with, if you're somewhere you can only
 say one thing:*
-> **guac puts your offer at the exact moment someone is choosing in your
-> category — paid per delivered offer, metered honestly, and worth more than
-> any banner because it's relevant, disclosed, and accountable.**
+> **guac places your disclosed offer after real agent answers — up to a few a
+> day, only while your budget lasts — paid per delivered offer, metered
+> honestly, and accountable end-to-end.**

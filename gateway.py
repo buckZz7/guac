@@ -43,8 +43,9 @@ def _user_id(request: Request) -> str:
 
 
 def _active_offers():
-    """Active offers from the portal store (budget remaining), falling back to
-    the static ads.json if no portal offers are configured. No per-day logic."""
+    """Active offers with advertiser demand (budget remaining): from the portal
+    store, falling back to static ads.json if no portal offers are configured.
+    Offers are the source of demand — no active funded offer = no ads."""
     portal_offers = [o for o in portal._offers()
                      if o.get("active") and not o.get("paused")
                      and o.get("spent", 0) < o.get("budget", 0)]
@@ -54,52 +55,54 @@ def _active_offers():
             if a.get("active", True) and not a.get("paused", False)]
 
 
-# --- Decision-point detection (V1 heuristic) ---
-# An ad is eligible only when the agent's message is a FINAL answer
-# (finish_reason == "stop") AND it hands off to the user (a decision prompt)
-# AND at least one offer's intent tag appears in the decision text. The
-# finish_reason gate is what kills the narration noise: tool_calls turns are
-# mid-loop, never final, and so never qualify. Deterministic — no LLM judge.
+# --- Demand-gated daily cadence (V1) ---
+# An ad is appended after an agent's FINAL answer (finish_reason == "stop"),
+# up to a flat daily cap per user, ONLY when there is funded advertiser demand
+# (an active offer with budget remaining). No topic matching, no handoff
+# heuristic — just: final answer + under cap + demand exists -> append.
+# The finish_reason gate is what kills the narration noise: tool_calls turns are
+# mid-loop, never final, and so never qualify.
 
-_HANDOFF_QUESTION = re.compile(r"\?\s*$")
-_HANDOFF_PHRASE = re.compile(
-    r"(which|what should|how should|do you want (me|to)|would you (like|rather)|"
-    r"shall i|want me to|your options|choose|pick (one|a|an)|please (let me know|choose|decide)|"
-    r"let me know|need your (input|decision|call)|i need you to (decide|choose)|"
-    r"would (you|that) work|does that (work|sound|look)|how (does|about) this)",
-    re.I)
-
-
-def _is_handoff(text):
-    t = (text or "").strip()
-    if not t:
-        return False
-    if _HANDOFF_QUESTION.search(t):
-        return True
-    return bool(_HANDOFF_PHRASE.search(t))
+def _daily_state(user_id):
+    """Per-user daily ad count + rotation offset, persisted so restarts don't
+    reset it. Demand-gated: count only accrues when an ad was actually shown."""
+    state = config.load_state()
+    today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    day = state.setdefault(user_id, {})
+    if day.get("date") != today:
+        day["date"] = today
+        day["count"] = 0
+    return state, day
 
 
-def _offer_intents(offer):
-    raw = offer.get("intents", offer.get("tags", []))
-    return [str(k).strip().lower() for k in raw if str(k).strip()]
+def _should_show_ad(user_id):
+    """Append an ad iff: funded demand exists AND user under daily cap. Returns
+    (show, offer_or_None). Deterministic rotation across offers.
 
-
-def _intent_score(offer, text):
-    """Deterministic topic match: how many of the offer's intent tags appear
-    in the decision text. 0 = no match (not eligible)."""
-    tl = (text or "").lower()
-    return sum(1 for kw in _offer_intents(offer) if kw and kw in tl)
-
-
-def _best_offer_for(text):
-    """Best topic-matching active offer; tie-break by id. None if nothing
-    matches the decision text (no ad shown)."""
-    scored = [(_intent_score(o, text), o["id"], o) for o in _active_offers()]
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    best = scored[0] if scored else None
-    if not best or best[0] <= 0:
-        return None
-    return best[2]
+    'Demand' = an active offer is present. Portal offers carry a budget/spent
+    ledger; static ads.json offers (no budget field) are treated as funded
+    standing inventory so they still count as demand."""
+    offers = _active_offers()
+    if not offers:
+        return False, None
+    # Demand gate: at least one offer must have unfunded budget. Static offers
+    # (no budget field) are assumed funded (standing inventory).
+    def funded(o):
+        if "budget" not in o:
+            return True
+        return o.get("spent", 0) < o.get("budget", 0)
+    if not any(funded(o) for o in offers):
+        return False, None
+    state, day = _daily_state(user_id)
+    if day.get("count", 0) >= config.ADS_PER_DAY:
+        return False, None
+    # Deterministic rotation: pick offers by id, cycling from the day's offset.
+    offers.sort(key=lambda o: o["id"])
+    pick = offers[day.get("offset", 0) % len(offers)]
+    day["offset"] = day.get("offset", 0) + 1
+    day["count"] = day.get("count", 0) + 1
+    config.save_state(state)
+    return True, pick
 
 
 def _human_payload(ad):
@@ -297,8 +300,8 @@ async def chat_completions(request: Request):
                             # Now the full answer is known: decide the footer.
                             full = "".join(parts)
                             offer = None
-                            if finish == "stop" and _is_handoff(full):
-                                offer = _best_offer_for(full)
+                            if finish == "stop":
+                                offer = _should_show_ad(uid)[1]
                             sponsor = None
                             impression_cost = 0.0
                             if offer:
@@ -361,8 +364,8 @@ async def chat_completions(request: Request):
     finish = data["choices"][0].get("finish_reason")
 
     offer = None
-    if finish == "stop" and _is_handoff(content):
-        offer = _best_offer_for(content)
+    if finish == "stop":
+        offer = _should_show_ad(uid)[1]
 
     sponsor = None
     impression_cost = 0.0
@@ -571,10 +574,10 @@ def pitch():
         return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
                             "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
                             "color:#e6e8ee;background:#0b0e14;'>"
-                            "guac — decision-point sponsorship.\n\n"
-                            "A disclosed Sponsor: footer appears below your answer only at a "
-                            "real decision point, matched to your topic. See the README for "
-                            "the full advertiser pitch.</pre>")
+                            "guac — demand-gated sponsorship.\n\n"
+                            "A disclosed Sponsor: footer appears below final agent answers — "
+                            "up to a few a day, only when an advertiser has funded budget. "
+                            "See the README for the full advertiser pitch.</pre>")
     return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
                         "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
                         "color:#e6e8ee;background:#0b0e14;'>"

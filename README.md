@@ -1,15 +1,17 @@
 # guac
 
 OpenAI-compatible gateway that sits between an agent and its inference provider.
-V1 is **decision-point sponsorship**: when the agent's answer is a final turn
-that hands off to the user AND an offer's intent matches the topic, guac appends
-a disclosed **`Sponsor:` footer** below the answer — for the human to see, never
-fed into the model. It routes through a quality-gated pool of cheap suppliers
-(with failover), meters the exact tokens, and applies a transparent,
-advertiser-funded discount to the user's per-token cost.
+V1 is **demand-gated sponsorship**: after a final agent answer, guac periodically
+appends a disclosed **`Sponsor:` footer** — up to a daily cap, only when there's
+funded advertiser demand. It's for the human to see, never fed into the model.
+It routes through a quality-gated pool of cheap suppliers (with failover), meters
+the exact tokens, and applies a transparent, advertiser-funded discount to the
+user's per-token cost.
 
-There is no frequency knob — an ad is shown only when it's earned, at a genuine
-decision point. Plain answers and mid-loop tool narration never qualify.
+The cadence is simple: **final answer + funded demand + under the daily cap →
+append a sponsor.** No topic-matching, no decision-point heuristics. If no
+advertiser has budget, no ads appear at all — the system is honest about
+inventory.
 
 The user's discount is a lower price, not a credit. No wallets, no balances.
 
@@ -17,7 +19,7 @@ The user's discount is a lower price, not a credit. No wallets, no balances.
 [agent] --base_url=guac--> [gateway] --quality-gated pool--> [suppliers]
    (Hermes/OpenClaw/Codex)     /|\                           (SN64/SN53/SN28/retail)
         user pays discounted rate <---|  advertiser money lowers it
-   human sees "Sponsor: <sponsor>" below the answer, after a --- line (never the model)
+   human sees "Sponsor: <sponsor>" below some answers, after a --- line (never the model)
 ```
 
 ## v1 design choice
@@ -27,13 +29,14 @@ injects anything into the model's context (costs no tokens, never influences
 inference). The disclosed footer is appended BELOW the answer, delimited by
 `---`, so everything above the line is byte-identical to the model output.
 
-The ad fires only when **all three** hold, deterministically:
-1. **Final answer** — `finish_reason == "stop"` (mid-loop `tool_calls` turns never qualify)
-2. **Handoff** — the answer poses a real decision to the user (ends in `?` or a handoff phrase)
-3. **Topic match** — an offer's `intent` tag appears in the decision text; highest match wins
+The ad fires when **all three** hold, deterministically:
+1. **Final answer** — `finish_reason == "stop"` (mid-loop `tool_calls` turns never qualify; this is what removes the narration noise)
+2. **Funded demand** — at least one active offer has budget remaining (static offers count as standing funded inventory)
+3. **Under the daily cap** — user hasn't hit `ADS_PER_DAY` (default 3) today
 
-The later agent-native "hard buyer" version (the agent flagging real decision
-points back to guac) can be layered on without changing the economics.
+Offers rotate deterministically so a user sees different sponsors across the day.
+The later agent-native "hard buyer" version can be layered on without changing
+the economics.
 
 ## Model
 
