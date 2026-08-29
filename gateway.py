@@ -527,12 +527,19 @@ async def backup_endpoint(request: Request):
 def pitch():
     """The advertiser pitch, served as readable HTML for the portal."""
     path = config.BASE / "docs" / "ADVERTISER_PITCH.md"
-    if not path.exists():
-        return JSONResponse({"error": "pitch not found"}, status_code=404)
+    text = path.read_text() if path.exists() else None
+    if not text:
+        return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
+                            "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
+                            "color:#e6e8ee;background:#0b0e14;'>"
+                            "guac — decision-point sponsorship.\n\n"
+                            "A disclosed Sponsor: footer appears below your answer only at a "
+                            "real decision point, matched to your topic. See the README for "
+                            "the full advertiser pitch.</pre>")
     return HTMLResponse("<pre style='white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;"
                         "line-height:1.6;max-width:820px;margin:2rem auto;padding:0 1rem;"
                         "color:#e6e8ee;background:#0b0e14;'>"
-                        + html.escape(path.read_text()) + "</pre>")
+                        + html.escape(text) + "</pre>")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

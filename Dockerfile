@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the guac codebase.
 COPY config.py suppliers.py settlement.py backup.py gateway.py portal.py portal_html.py daily.py stub.py ads.json suppliers.json ./
 
+# Docs (advertiser pitch is served at /pitch).
+COPY docs/ ./docs/
+
 # Runtime state + ledgers live in /data (a Fly volume if attached, else container).
 ENV ADGATE_STATE_FILE=/data/state.json \
     ADGATE_LEDGER_FILE=/data/ledger.jsonl \
