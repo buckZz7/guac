@@ -33,6 +33,12 @@ assert "Get started free" in r.text
 assert "/terms" in r.text and "/privacy" in r.text
 print("PASS  marketing home at / renders (hero + CTAs + footer)")
 
+# 1d) custom 404 renders (not a 500)
+r = c.get("/does-not-exist-xyz")
+assert r.status_code == 404, r.status_code
+assert "Page not found" in r.text and "Back to guac home" in r.text
+print("PASS  custom 404 renders with status 404")
+
 # 2) portal home has two clear paths + legal footer
 r = c.get("/portal")
 assert r.status_code == 200, r.status_code

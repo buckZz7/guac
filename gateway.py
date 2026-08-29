@@ -987,7 +987,7 @@ async def not_found(request: Request, exc):
   <p class="sub">That page doesn't exist — it may have moved.</p>
   <a class="btn btn-primary" href="/">Back to guac home</a>
 </div>"""
-    return portal_html._page("Not found", body)
+    return HTMLResponse(portal_html._page("Not found", body), status_code=404)
 
 
 @app.get("/portal", response_class=HTMLResponse)
