@@ -64,9 +64,14 @@ def main():
         if os.path.exists(p):
             os.remove(p)
 
+    # A supplier with no key must be skipped (never tried) so a request fails
+    # fast to a keyed supplier instead of hanging on an empty-key upstream.
     td = tempfile.mkdtemp()
     sup = {"suppliers": [
         {"name": "stub", "base_url": "http://127.0.0.1:8001/v1", "bid": 1.0,
+         "min_score": 0.4, "warmup_successes": 1, "key_env": "STUB_KEY"},
+        # No key_env => no key => must be skipped.
+        {"name": "nokey", "base_url": "http://127.0.0.1:9999/v1", "bid": 1.0,
          "min_score": 0.4, "warmup_successes": 1},
     ]}
     sup_file = os.path.join(td, "suppliers.json")
@@ -90,7 +95,8 @@ def main():
     env = dict(os.environ)
     env["ADGATE_SUPPLIERS_FILE"] = sup_file
     env["ADGATE_GATEWAY_KEY"] = KEY
-    env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")  # -> ads.json fallback
+    env["ADGATE_OFFERS_FILE"] = os.path.join(td, "offers.json")
+    env["STUB_KEY"] = "real-key"  # stub gets a key; "nokey" gets none
     gw = subprocess.Popen([PY, "gateway.py", "--port", "8000"], cwd=ROOT,
                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -154,7 +160,9 @@ def main():
         assert len(rows) == 2, rows
         assert all(r["user"] in ("master", "default") for r in rows), rows
         assert all(r["sponsored"] for r in rows), rows
-        print("AGNOSTIC ledger: 2 sponsored rows, identity from key alone ✓")
+        # The no-key supplier must never be routed to (would hang).
+        assert all(r["supplier"] == "stub" for r in rows), rows
+        print("AGNOSTIC ledger: 2 sponsored rows, identity from key alone, no-key supplier skipped ✓")
 
         print("\nAGNOSTIC-CLIENT TESTS PASSED — drop-in OpenAI-compatible for any harness")
     finally:

@@ -230,6 +230,12 @@ async def chat_completions(request: Request):
     chosen = None
 
     for supplier in ordered:
+        # Skip a supplier that expects a key from the environment but has none
+        # configured — it can never authenticate and would hang / fail upstream,
+        # so fail fast to a supplier that can serve. Suppliers with no key at
+        # all (e.g. a local stub) are still allowed through.
+        if supplier.key_env and not supplier.key:
+            continue
         chosen = supplier
         sup_headers = dict(headers)
         if supplier.key:
